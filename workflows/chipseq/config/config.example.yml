@@ -29,7 +29,7 @@ enable_homer: false
 # Peak calling
 call_peak_modes:
   - with_control
-  - without_control
+  # - without_control
 call_peak_types:
   - narrow
   # - broad
