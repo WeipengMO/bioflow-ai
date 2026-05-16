@@ -1,0 +1,19 @@
+# Treatment samples to call peaks on.
+# Sample names must match FASTQ names after removing the read suffix, or the sample column in fastq_manifest.tsv.
+treatments:
+  - WT_H3K4me3_rep1
+  - WT_H3K4me3_rep2
+  - KO_H3K4me3_rep1
+  - KO_H3K4me3_rep2
+
+# Control strategy:
+#   none    - call peaks without control only
+#   matched - each treatment has one matched control in controls.matched
+#   pooled  - merge controls.pooled_samples and use controls.pooled_name for all treatments
+controls:
+  strategy: pooled
+  pooled_name: pooled_input
+  pooled_samples:
+    - WT_Input_rep1
+    - WT_Input_rep2
+  matched: {}

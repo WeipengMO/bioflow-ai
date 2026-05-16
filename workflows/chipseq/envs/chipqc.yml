@@ -1,0 +1,8 @@
+name: chipqc
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - r-base
+  - bioconductor-chipqc

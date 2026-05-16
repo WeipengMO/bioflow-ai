@@ -1,0 +1,35 @@
+name: chipseq
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  # core
+  - python=3.10
+  - pip
+
+  # peak calling
+  - macs3
+  - idr
+
+  # alignment / read processing
+  - bowtie
+  - bowtie2
+  - samtools
+  - bedtools
+  - subread
+
+  # signal / visualization
+  - deeptools
+  - pybigwig
+  - py2bit
+  - pysam
+
+  # python utilities
+  - numpy<2
+  - scipy
+  - pandas
+  - matplotlib-base
+  - plotly
+  - requests
+  - pyyaml

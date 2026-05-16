@@ -1,0 +1,85 @@
+# BioFlowAI ChIP-seq/CUT&Tag workflow configuration.
+# Copy this file to config/config.yml before running.
+
+mode: pe                  # pe or se
+workdir: .
+
+# Input metadata
+samples: config/samples.yml
+replicates: config/replicates.yml
+raw_data_dir: raw_data
+
+# Optional explicit FASTQ manifest. Leave empty to auto-discover FASTQs from raw_data_dir.
+# Recommended for irregular file names or multiple lanes that were not merged before analysis.
+fastq_manifest: ""
+
+# Reference resources
+genome: /path/to/bowtie2/index/prefix
+regions_bed: /path/to/regions.bed
+gsize: hs
+
+# software dependency paths
+picard_path: /path/to/picard.jar
+
+# Core switches
+enable_deeptools_profile: true
+enable_chipqc: false
+enable_homer: false
+
+# Peak calling
+call_peak_modes:
+  - with_control
+  - without_control
+call_peak_types:
+  - narrow
+  # - broad
+macs3_broad_cutoff: 0.1
+macs3_extra: ""
+
+# Replicate consensus peaks
+replicate_peak_mode: with_control
+replicate_peak_type: narrow
+# replicate_min_support is optional. If omitted, all replicates in each group must support a consensus interval.
+# replicate_min_support: 2
+
+# ChIPQC
+# If chipqc_sample_sheet is empty and enable_chipqc is true, a generic sheet is generated automatically.
+chipqc_sample_sheet: ""
+chipqc_peak_mode: with_control
+chipqc_peak_type: narrow
+chipqc_report_dir: reports/chipqc
+chipqc_annotation: ""
+chipqc_report_facet: false
+
+# HOMER motif enrichment
+homer_input_source: replicate_intersect   # replicate_intersect or sample_peaks
+homer_peak_mode: with_control
+homer_peak_type: narrow
+homer_genome: hg38
+homer_report_dir: reports/homer
+homer_input_dir: homer_inputs
+homer_size: 200
+homer_extra: "-mask -len 8,10,12"
+homer_use_summit: true
+homer_blacklist: ""
+# homer_min_peaks is intentionally optional; default is 50 in rules/motif.smk.
+
+# Tool-specific extra arguments
+fastp_extra: ""
+bowtie2_extra: "--dovetail -X 1000"
+mark_duplicates_extra: "REMOVE_DUPLICATES=true SORTING_COLLECTION_SIZE_RATIO=0.01"
+bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
+compute_matrix_extra: "scale-regions -b 1000 -a 1000 --skipZeros"
+plot_profile_extra: ""
+
+# Per-rule threads
+threads:
+  fastp: 8
+  bowtie2: 20
+  mark_duplicates: 4
+  merge_control: 4
+  bam_coverage: 8
+  compute_matrix: 8
+  macs3: 1
+  chipqc: 8
+  homer: 24

@@ -1,0 +1,75 @@
+workflow:
+  name: chipseq
+  description: ChIP-seq/CUT&Tag processing workflow from FASTQ to BAM, bigWig, MACS3 peaks, replicate consensus peaks, ChIPQC, and HOMER.
+  status: development
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  sample_config: config/samples.example.yml
+  replicate_config: config/replicates.example.yml
+
+commands:
+  deploy_project: ./scripts/deploy_pipeline.sh /path/to/chipseq_project
+  dry_run: snakemake -np --use-conda
+  run: snakemake --use-conda -j 16
+  unlock: snakemake --unlock
+  generate_fastq_manifest: python scripts/make_fastq_manifest.py --raw-data-dir raw_data --output config/fastq_manifest.tsv
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.yml
+    required: true
+  replicates:
+    path: config/replicates.yml
+    required: false
+  fastqs:
+    path: raw_data/
+    required: true
+  fastq_manifest:
+    path: config/fastq_manifest.tsv
+    required: false
+
+outputs:
+  aligned_bams:
+    path: aligned_data/
+  tracks:
+    path: tracks/
+  macs3_peaks:
+    path: macs3_results/
+  replicate_consensus:
+    path: replicate_intersect/
+  chipqc:
+    path: reports/chipqc/
+  homer:
+    path: reports/homer/
+  logs:
+    path: logs/
+
+safety:
+  user_owned:
+    - raw_data/
+    - config/config.yml
+    - config/samples.yml
+    - config/replicates.yml
+    - config/fastq_manifest.tsv
+    - config/chipqc_sample_sheet.tsv
+  safe_to_regenerate:
+    - clean_data/
+    - aligned_data/
+    - tracks/
+    - deeptools_profile/
+    - macs3_results/
+    - replicate_intersect/
+    - reports/
+    - homer_inputs/
+    - logs/
+    - .snakemake/
+
+notes:
+  - Always run a dry-run before changing workflow logic.
+  - Do not assume genome build; verify genome, regions_bed, blacklist, and homer_genome are consistent.
+  - Prefer fastq_manifest for irregular FASTQ names or multi-lane data that have not been merged.

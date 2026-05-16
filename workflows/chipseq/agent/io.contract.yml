@@ -1,0 +1,56 @@
+required_config_keys:
+  - mode
+  - samples
+  - raw_data_dir
+  - genome
+  - gsize
+
+optional_config_keys:
+  - workdir
+  - replicates
+  - fastq_manifest
+  - regions_bed
+  - call_peak_modes
+  - call_peak_types
+  - enable_deeptools_profile
+  - enable_chipqc
+  - enable_homer
+  - chipqc_sample_sheet
+  - homer_genome
+  - homer_blacklist
+
+sample_metadata:
+  file: config/samples.yml
+  schema:
+    treatments: list[str]
+    controls:
+      strategy: one_of[none, matched, pooled]
+      pooled_name: str
+      pooled_samples: list[str]
+      matched: map[treatment_sample, control_sample]
+
+fastq_manifest:
+  file: config/fastq_manifest.tsv
+  columns:
+    sample: required
+    read1: required
+    read2: required_for_pe_optional_for_se
+
+generated_outputs:
+  bams:
+    - aligned_data/{sample}.sorted.rmdup.bam
+    - aligned_data/{sample}.sorted.rmdup.bam.bai
+  tracks:
+    - tracks/{sample}.sorted.rmdup.CPM.bw
+  peaks:
+    - macs3_results/narrow/{sample}_peaks.narrowPeak
+    - macs3_results/broad/{sample}_peaks.broadPeak
+    - macs3_results/narrow_no_control/{sample}_peaks.narrowPeak
+    - macs3_results/broad_no_control/{sample}_peaks.broadPeak
+  consensus:
+    - replicate_intersect/{group}_intersect.bed
+  reports:
+    - reports/chipqc/
+    - reports/homer/
+  logs:
+    - logs/
