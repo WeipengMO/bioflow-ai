@@ -6,6 +6,8 @@ if MODE == "pe":
         output:
             r1=temp("clean_data/{sample}.R1.clean.fq.gz"),
             r2=temp("clean_data/{sample}.R2.clean.fq.gz")
+        wildcard_constraints:
+            sample=SAMPLE_PATTERN
         params:
             html="qc/fastp/{sample}.html",
             json="qc/fastp/{sample}.json",
@@ -42,6 +44,8 @@ test -s {output.r2:q}
         output:
             bam=temp("aligned_data/{sample}.sorted.bam"),
             bai=temp("aligned_data/{sample}.sorted.bam.bai")
+        wildcard_constraints:
+            sample=SAMPLE_PATTERN
         params:
             genome=lambda wildcards: config["genome"],
             extra=lambda wildcards: config.get("bowtie2_extra", "--dovetail -X 1000")
@@ -74,6 +78,8 @@ else:
             r1=raw_read1
         output:
             r1=temp("clean_data/{sample}.clean.fq.gz")
+        wildcard_constraints:
+            sample=SAMPLE_PATTERN
         params:
             html="qc/fastp/{sample}.html",
             json="qc/fastp/{sample}.json",
@@ -106,6 +112,8 @@ test -s {output.r1:q}
         output:
             bam=temp("aligned_data/{sample}.sorted.bam"),
             bai=temp("aligned_data/{sample}.sorted.bam.bai")
+        wildcard_constraints:
+            sample=SAMPLE_PATTERN
         params:
             genome=lambda wildcards: config["genome"],
             extra=lambda wildcards: config.get("bowtie2_extra", "")
@@ -141,6 +149,8 @@ rule mark_duplicates:
         bam="aligned_data/{sample}.sorted.rmdup.bam",
         bai="aligned_data/{sample}.sorted.rmdup.bam.bai",
         metrics="qc/mark_duplicates/{sample}.metrics.txt"
+    wildcard_constraints:
+        sample=SAMPLE_PATTERN
     params:
         picard=lambda wildcards: config.get("picard_path", "picard"),
         extra=lambda wildcards: config.get("mark_duplicates_extra", "REMOVE_DUPLICATES=true SORTING_COLLECTION_SIZE_RATIO=0.01")
@@ -178,6 +188,8 @@ rule bam_coverage:
         bai="aligned_data/{sample}.sorted.rmdup.bam.bai"
     output:
         "tracks/{sample}.sorted.rmdup.CPM.bw"
+    wildcard_constraints:
+        sample=SAMPLE_PATTERN
     params:
         extra=lambda wildcards: config.get("bam_coverage_extra", "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions")
     log:
@@ -206,6 +218,8 @@ rule compute_matrix_profile:
     output:
         matrix=temp("deeptools_profile/{sample}.matrix.gz"),
         png="deeptools_profile/{sample}.scale.png"
+    wildcard_constraints:
+        sample=SAMPLE_PATTERN
     params:
         regions=lambda wildcards: config["regions_bed"],
         matrix_extra=lambda wildcards: config.get("compute_matrix_extra", "scale-regions -b 1000 -a 1000 --skipZeros"),

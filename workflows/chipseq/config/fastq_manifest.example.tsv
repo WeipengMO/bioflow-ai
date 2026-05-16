@@ -1,5 +1,9 @@
 sample	read1	read2
-WT_H3K4me3_rep1	raw_data/WT_H3K4me3_rep1_R1.fastq.gz	raw_data/WT_H3K4me3_rep1_R2.fastq.gz
-WT_H3K4me3_rep2	raw_data/WT_H3K4me3_rep2_R1.fastq.gz	raw_data/WT_H3K4me3_rep2_R2.fastq.gz
+WT_H3K27ac_rep1	raw_data/WT_H3K27ac_rep1_R1.fastq.gz	raw_data/WT_H3K27ac_rep1_R2.fastq.gz
+WT_H3K27ac_rep2	raw_data/WT_H3K27ac_rep2_R1.fastq.gz	raw_data/WT_H3K27ac_rep2_R2.fastq.gz
+KO_H3K27ac_rep1	raw_data/KO_H3K27ac_rep1_R1.fastq.gz	raw_data/KO_H3K27ac_rep1_R2.fastq.gz
+KO_H3K27ac_rep2	raw_data/KO_H3K27ac_rep2_R1.fastq.gz	raw_data/KO_H3K27ac_rep2_R2.fastq.gz
 WT_Input_rep1	raw_data/WT_Input_rep1_R1.fastq.gz	raw_data/WT_Input_rep1_R2.fastq.gz
 WT_Input_rep2	raw_data/WT_Input_rep2_R1.fastq.gz	raw_data/WT_Input_rep2_R2.fastq.gz
+KO_Input_rep1	raw_data/KO_Input_rep1_R1.fastq.gz	raw_data/KO_Input_rep1_R2.fastq.gz
+KO_Input_rep2	raw_data/KO_Input_rep2_R1.fastq.gz	raw_data/KO_Input_rep2_R2.fastq.gz

@@ -43,8 +43,12 @@ def as_list(value: Any) -> list[str]:
     return [str(item) for item in value]
 
 
+def unique_list(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
 def control_map(samples_config: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
-    treatments = as_list(samples_config.get("treatments", []))
+    treatments = unique_list(as_list(samples_config.get("treatments", [])))
     controls = samples_config.get("controls", {}) or {}
     strategy = controls.get("strategy", "none")
 
@@ -52,14 +56,50 @@ def control_map(samples_config: dict[str, Any]) -> tuple[dict[str, str], list[st
         return {}, treatments
 
     if strategy == "pooled":
-        pooled_name = str(controls.get("pooled_name", "pooled_input"))
-        return {treatment: pooled_name for treatment in treatments}, treatments
+        pooled = controls.get("pooled", {}) or {}
+        if not pooled:
+            raise ValueError("controls.strategy is 'pooled', but controls.pooled is empty")
+
+        mapping: dict[str, str] = {}
+        treatment_set = set(treatments)
+        for pool_name, pool_config in pooled.items():
+            pool_treatments = as_list((pool_config or {}).get("treatments", []))
+            pool_controls = as_list((pool_config or {}).get("controls", []))
+            if not pool_treatments:
+                raise ValueError(f"controls.pooled.{pool_name}.treatments is empty")
+            if not pool_controls:
+                raise ValueError(f"controls.pooled.{pool_name}.controls is empty")
+            unknown = sorted(set(pool_treatments) - treatment_set)
+            if unknown:
+                raise ValueError(
+                    f"controls.pooled.{pool_name}.treatments contains unknown treatment(s): "
+                    + ", ".join(unknown)
+                )
+            duplicates = sorted(set(pool_treatments) & set(mapping))
+            if duplicates:
+                raise ValueError(
+                    "Treatment(s) assigned to more than one pooled control: "
+                    + ", ".join(duplicates)
+                )
+            for treatment in pool_treatments:
+                mapping[treatment] = str(pool_name)
+
+        missing = sorted(treatment_set - set(mapping))
+        if missing:
+            raise ValueError(
+                "controls.strategy is 'pooled', but no pooled control was assigned to treatment(s): "
+                + ", ".join(missing)
+            )
+        return mapping, treatments
 
     if strategy == "matched":
         matched = {str(key): str(value) for key, value in (controls.get("matched", {}) or {}).items()}
         missing = sorted(set(treatments) - set(matched))
         if missing:
             raise ValueError("controls.matched is missing treatment(s): " + ", ".join(missing))
+        unknown = sorted(set(matched) - set(treatments))
+        if unknown:
+            raise ValueError("controls.matched contains unknown treatment(s): " + ", ".join(unknown))
         return matched, treatments
 
     raise ValueError("controls.strategy must be one of: none, pooled, matched")

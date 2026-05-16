@@ -36,15 +36,24 @@ def macs3_broad_arg(wildcards):
     return ""
 
 
+def pooled_control_inputs(wildcards):
+    return expand(
+        "aligned_data/{sample}.sorted.rmdup.bam",
+        sample=POOLED_CONTROL_GROUPS[str(wildcards.pool)],
+    )
+
+
 if USE_POOLED_CONTROL:
     rule merge_pooled_control:
         input:
-            expand("aligned_data/{sample}.sorted.rmdup.bam", sample=POOLED_CONTROL_SAMPLES)
+            pooled_control_inputs
         output:
-            bam=f"aligned_data/{POOLED_CONTROL_NAME}.sorted.rmdup.bam",
-            bai=f"aligned_data/{POOLED_CONTROL_NAME}.sorted.rmdup.bam.bai"
+            bam="aligned_data/{pool}.sorted.rmdup.bam",
+            bai="aligned_data/{pool}.sorted.rmdup.bam.bai"
+        wildcard_constraints:
+            pool=POOLED_CONTROL_PATTERN
         log:
-            f"logs/{POOLED_CONTROL_NAME}.merge_control.log"
+            "logs/{pool}.merge_control.log"
         threads:
             workflow_threads("merge_control", 4)
         conda:
@@ -67,7 +76,8 @@ rule macs3_callpeak:
         "macs3_results/{peak_dir}/{treatment}_peaks.{peak_ext}"
     wildcard_constraints:
         peak_dir="narrow|broad|narrow_no_control|broad_no_control",
-        peak_ext="narrowPeak|broadPeak"
+        peak_ext="narrowPeak|broadPeak",
+        treatment=TREATMENT_PATTERN
     params:
         outdir=lambda wildcards: f"macs3_results/{wildcards.peak_dir}",
         name=lambda wildcards: wildcards.treatment,

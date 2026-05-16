@@ -61,26 +61,69 @@ def load_sample_data(path):
     strategy = str(controls.get("strategy", "none"))
     validate_choices([strategy], {"none", "pooled", "matched"}, "controls.strategy")
 
-    pooled_name = str(controls.get("pooled_name", "pooled_input"))
-    pooled_samples = unique_list(as_list(controls.get("pooled_samples", [])))
     matched_controls = {
         str(treatment): str(control)
         for treatment, control in (controls.get("matched", {}) or {}).items()
     }
+    pooled_control_groups = {}
 
     if strategy == "pooled":
         if not treatments:
             raise ValueError("controls.strategy is 'pooled', but treatments is empty.")
-        if not pooled_samples:
-            raise ValueError("controls.strategy is 'pooled', but controls.pooled_samples is empty.")
-        control_map = {treatment: pooled_name for treatment in treatments}
-        control_samples = pooled_samples
+        pooled = controls.get("pooled", {}) or {}
+        if not pooled:
+            raise ValueError("controls.strategy is 'pooled', but controls.pooled is empty.")
+
+        control_map = {}
+        control_samples = []
+        treatment_set = set(treatments)
+        for pool_name, pool_config in pooled.items():
+            pool_name = str(pool_name)
+            pool_treatments = unique_list(as_list((pool_config or {}).get("treatments", [])))
+            pool_controls = unique_list(as_list((pool_config or {}).get("controls", [])))
+            if not pool_treatments:
+                raise ValueError(f"controls.pooled.{pool_name}.treatments is empty.")
+            if not pool_controls:
+                raise ValueError(f"controls.pooled.{pool_name}.controls is empty.")
+            unknown = sorted(set(pool_treatments) - treatment_set)
+            if unknown:
+                raise ValueError(
+                    f"controls.pooled.{pool_name}.treatments contains unknown treatment(s): "
+                    + ", ".join(unknown)
+                )
+            duplicates = sorted(set(pool_treatments) & set(control_map))
+            if duplicates:
+                raise ValueError(
+                    "Treatment(s) assigned to more than one pooled control: "
+                    + ", ".join(duplicates)
+                )
+            pooled_control_groups[pool_name] = pool_controls
+            control_samples.extend(pool_controls)
+            for treatment in pool_treatments:
+                control_map[treatment] = pool_name
+
+        missing = sorted(treatment_set - set(control_map))
+        if missing:
+            raise ValueError(
+                "controls.strategy is 'pooled', but no pooled control was assigned to treatment(s): "
+                + ", ".join(missing)
+            )
+        control_samples = unique_list(control_samples)
+        pool_name_collisions = sorted(set(pooled_control_groups) & set(treatments + control_samples))
+        if pool_name_collisions:
+            raise ValueError(
+                "Pooled control name(s) must not duplicate treatment or raw control sample names: "
+                + ", ".join(pool_name_collisions)
+            )
     elif strategy == "matched":
         if not treatments:
             raise ValueError("controls.strategy is 'matched', but treatments is empty.")
         missing = sorted(set(treatments) - set(matched_controls))
         if missing:
             raise ValueError("controls.matched is missing treatment(s): " + ", ".join(missing))
+        unknown = sorted(set(matched_controls) - set(treatments))
+        if unknown:
+            raise ValueError("controls.matched contains unknown treatment(s): " + ", ".join(unknown))
         control_map = {treatment: matched_controls[treatment] for treatment in treatments}
         control_samples = unique_list(control_map.values())
     else:
@@ -92,8 +135,7 @@ def load_sample_data(path):
         "control_strategy": strategy,
         "control_map": control_map,
         "control_samples": control_samples,
-        "pooled_control_name": pooled_name,
-        "pooled_control_samples": pooled_samples,
+        "pooled_control_groups": pooled_control_groups,
     }
 
 
