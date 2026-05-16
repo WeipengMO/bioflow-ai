@@ -44,9 +44,7 @@ BioFlowAI/
 │       ├── rules/
 │       ├── envs/
 │       ├── scripts/
-│       ├── docs/
-│       ├── agent/
-│       └── tests/
+│       └── agent/
 ├── shared/
 ├── docs/
 └── tests/
@@ -71,7 +69,6 @@ It should include:
 - `rules/`
 - `envs/`
 - `scripts/`
-- `docs/`
 - `agent/`
 
 ### 2. Config-driven execution
@@ -220,8 +217,7 @@ Use clear and predictable names:
 workflows/chipseq
 workflows/atacseq
 workflows/rnaseq
-workflows/wgbs
-workflows/hic
+...
 ```
 
 Use stable internal structure:
@@ -229,7 +225,6 @@ Use stable internal structure:
 ```text
 Snakefile
 config/config.example.yml
-config/samples.example.tsv
 rules/*.smk
 envs/*.yml
 scripts/*.py
