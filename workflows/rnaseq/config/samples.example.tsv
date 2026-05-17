@@ -1,0 +1,5 @@
+sample	fq1	fq2	group	replicate
+control_1	raw_data/control_1_R1.fastq.gz	raw_data/control_1_R2.fastq.gz	control	1
+control_2	raw_data/control_2_R1.fastq.gz	raw_data/control_2_R2.fastq.gz	control	2
+treated_1	raw_data/treated_1_R1.fastq.gz	raw_data/treated_1_R2.fastq.gz	treated	1
+treated_2	raw_data/treated_2_R1.fastq.gz	raw_data/treated_2_R2.fastq.gz	treated	2

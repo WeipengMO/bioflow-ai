@@ -1,0 +1,62 @@
+workflow:
+  name: rnaseq_expression
+  description: Bulk RNA-seq workflow from FASTQ files to raw count, FPKM, TPM matrices, sorted BAM files, and bigWig tracks.
+  status: development
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  sample_sheet: config/samples.example.tsv
+
+commands:
+  deploy_project: ./scripts/deploy_pipeline.sh /path/to/rnaseq_project
+  validate_samples: python scripts/validate_samples.py --samples config/samples.tsv
+  dry_run: snakemake -np --use-conda
+  run: snakemake --use-conda -j 16
+  unlock: snakemake --unlock
+  generate_samples: python scripts/make_fastq_manifest.py --raw-data-dir raw_data --output config/samples.tsv
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.tsv
+    required_columns:
+      - sample
+      - fq1
+      - fq2
+    optional_columns:
+      - group
+      - replicate
+  reference:
+    required_config_keys:
+      - genome.gtf
+      - genome.star_index
+
+outputs:
+  matrices:
+    - results/matrix/gene_counts.tsv
+    - results/matrix/gene_fpkm.tsv
+    - results/matrix/gene_tpm.tsv
+    - results/matrix/gene_length.tsv
+  bam:
+    path: results/bam/
+  bigwig:
+    path: results/bigwig/
+  qc:
+    path: results/qc/
+  report:
+    path: results/report/multiqc_report.html
+  logs:
+    path: results/logs/
+
+safety:
+  user_owned:
+    - raw_data/
+    - config/config.yml
+    - config/samples.tsv
+  safe_to_regenerate:
+    - results/
+    - benchmark/
+    - .snakemake/

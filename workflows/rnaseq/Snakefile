@@ -1,0 +1,23 @@
+configfile: "config/config.yml"
+
+shell.prefix('[ -n "${{CONDA_PREFIX:-}}" ] && export PATH="${{CONDA_PREFIX}}/bin:$PATH"; ')
+
+include: "rules/common.smk"
+
+rule all:
+    input:
+        f"{OUTDIR}/matrix/gene_counts.tsv",
+        f"{OUTDIR}/matrix/gene_fpkm.tsv",
+        f"{OUTDIR}/matrix/gene_tpm.tsv",
+        f"{OUTDIR}/matrix/gene_length.tsv",
+        expand(f"{OUTDIR}/bam/{{sample}}.sorted.bam", sample=SAMPLES),
+        expand(f"{OUTDIR}/bam/{{sample}}.sorted.bam.bai", sample=SAMPLES),
+        expand(f"{OUTDIR}/bigwig/{{sample}}.bw", sample=SAMPLES),
+        f"{OUTDIR}/report/multiqc_report.html"
+
+include: "rules/trim.smk"
+include: "rules/align_star.smk"
+include: "rules/count_featurecounts.smk"
+include: "rules/matrix.smk"
+include: "rules/bigwig.smk"
+include: "rules/report.smk"

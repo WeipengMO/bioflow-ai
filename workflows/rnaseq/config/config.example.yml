@@ -1,0 +1,44 @@
+project: rnaseq_expression
+outdir: results
+samples: config/samples.tsv
+
+genome:
+  name: hg38
+  fasta: /path/to/hg38.fa
+  gtf: /path/to/gene.gtf
+  star_index: /path/to/star_index
+
+# unstranded / forward / reverse
+# featureCounts: unstranded=-s 0, forward=-s 1, reverse=-s 2
+strandness: unstranded
+
+fastp:
+  enabled: true
+  threads: 8
+  qualified_quality_phred: 20
+  length_required: 30
+  extra: ""
+
+star:
+  threads: 24
+  extra: ""
+
+featurecounts:
+  threads: 8
+  feature_type: exon
+  attribute_type: gene_id
+  paired_extra: "-p -B -C"
+  single_extra: ""
+  extra: ""
+
+bigwig:
+  enabled: true
+  threads: 8
+  bin_size: 10
+  normalize_using: CPM
+  effective_genome_size: null
+  extend_reads: false
+  extra: ""
+
+multiqc:
+  enabled: true
