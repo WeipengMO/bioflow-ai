@@ -1,43 +1,6 @@
 # RNA-seq Expression Workflow
 
-## Quick Start
-
-Create a project directory from this workflow template:
-
-```bash
-cd workflows/rnaseq
-./scripts/deploy_pipeline.sh /path/to/rnaseq_project
-cd /path/to/rnaseq_project
-```
-
-Place FASTQ files under `raw_data/`, edit `config/config.yml` and `config/samples.tsv`, then run:
-
-```bash
-./run_snakemake.sh -n
-./run_snakemake.sh
-```
-
-The wrapper uses Snakemake conda environments by default and installs them under:
-
-```text
-/data/user/mowp/snakemake_conda_envs
-```
-
-Set it persistently in `config/run_snakemake.env` if needed:
-
-```bash
-SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs
-```
-
-`config/run_snakemake.env.example` is only a template and is not loaded by `run_snakemake.sh`.
-
-Or override this per run:
-
-```bash
-SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs ./run_snakemake.sh
-```
-
-## Required Inputs
+## Inputs
 
 Project files:
 
@@ -66,7 +29,7 @@ treated_2	raw_data/treated_2_R1.fastq.gz	raw_data/treated_2_R2.fastq.gz	treated	
 
 If `group` or `replicate` columns are not provided, the workflow will still run correctly. These columns are only used for downstream analysis or metadata purposes.
 
-## Reference Resource Preparation
+### Reference Resource Preparation
 
 All genome-related files must use the same assembly.
 
@@ -110,7 +73,7 @@ strandness: unstranded  # unstranded / forward / reverse
   - `forward` → `-s 1`
   - `reverse` → `-s 2`
 
-## Main Outputs
+## Outputs
 
 ```text
 results/matrix/gene_counts.tsv      # Raw count matrix, with gene_symbol column
@@ -131,6 +94,43 @@ results/report/multiqc_report.html  # QC summary
 5. `bigwig`: bamCoverage to generate bigWig
 6. `report`: MultiQC summary report
 
+## Quick Start
+
+Create a project directory from this workflow template:
+
+```bash
+cd workflows/rnaseq
+./scripts/deploy_pipeline.sh /path/to/rnaseq_project
+cd /path/to/rnaseq_project
+```
+
+Place FASTQ files under `raw_data/`, edit `config/config.yml` and `config/samples.tsv`, then run:
+
+```bash
+./run_snakemake.sh -n
+./run_snakemake.sh
+```
+
+The wrapper uses Snakemake conda environments by default and installs them under:
+
+```text
+/data/user/mowp/snakemake_conda_envs
+```
+
+Set it persistently in `config/run_snakemake.env` if needed:
+
+```bash
+SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs
+```
+
+`config/run_snakemake.env.example` is only a template and is not loaded by `run_snakemake.sh`.
+
+Or override this per run:
+
+```bash
+SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs ./run_snakemake.sh
+```
+
 ## Troubleshooting
 
 - Ensure sample names match between FASTQ files and samples.tsv
@@ -141,6 +141,16 @@ results/report/multiqc_report.html  # QC summary
 ```bash
 ./run_snakemake.sh -n -p
 ```
+
+## Notes for AI Agents
+
+- Read this README and the files under `agent/` before modifying config or starting a run.
+- Prefer deploying the workflow into a separate project directory instead of editing files under `workflows/rnaseq/` directly.
+- Use `scripts/deploy_pipeline.sh` or the documented deployment steps when creating a new analysis directory.
+- Preserve existing `raw_data/` files and treat user-provided sample tables and config files as user-owned inputs unless the user explicitly requests edits.
+- Start with `./run_snakemake.sh -n -p` before attempting a full run.
+- When reporting back, summarize created files, unresolved required inputs, and the next recommended command.
+
 
 ## External Resource Links
 
