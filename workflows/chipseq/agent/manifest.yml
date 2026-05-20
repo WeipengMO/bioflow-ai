@@ -7,7 +7,6 @@ entrypoint:
   snakefile: Snakefile
   example_config: config/config.example.yml
   sample_config: config/samples.example.yml
-  replicate_config: config/replicates.example.yml
 
 commands:
   deploy_project: ./scripts/deploy_pipeline.sh /path/to/chipseq_project
@@ -23,9 +22,6 @@ inputs:
   samples:
     path: config/samples.yml
     required: true
-  replicates:
-    path: config/replicates.yml
-    required: false
   fastqs:
     path: raw_data/
     required: true
@@ -35,38 +31,37 @@ inputs:
 
 outputs:
   aligned_bams:
-    path: aligned_data/
+    path: results/aligned_data/
   tracks:
-    path: tracks/
+    path: results/bigwig/
   macs3_peaks:
-    path: macs3_results/
+    path: results/macs3_results/
   replicate_consensus:
-    path: replicate_intersect/
+    path: results/replicate_intersect/
   chipqc:
-    path: reports/chipqc/
+    path: results/reports/chipqc/
   homer:
-    path: reports/homer/
+    path: results/reports/homer/
   logs:
-    path: logs/
+    path: results/logs/
 
 safety:
   user_owned:
     - raw_data/
     - config/config.yml
     - config/samples.yml
-    - config/replicates.yml
     - config/fastq_manifest.tsv
     - config/chipqc_sample_sheet.tsv
   safe_to_regenerate:
-    - clean_data/
-    - aligned_data/
-    - tracks/
-    - deeptools_profile/
-    - macs3_results/
-    - replicate_intersect/
-    - reports/
-    - homer_inputs/
-    - logs/
+    - results/clean_data/
+    - results/aligned_data/
+    - results/bigwig/
+    - results/deeptools_profile/
+    - results/macs3_results/
+    - results/replicate_intersect/
+    - results/reports/
+    - results/homer_inputs/
+    - results/logs/
     - .snakemake/
 
 notes:

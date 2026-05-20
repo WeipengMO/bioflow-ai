@@ -9,114 +9,36 @@ include:
     "rules/common.smk"
 
 
-MODE = str(config.get("mode", "pe")).lower()
-validate_choices([MODE], {"pe", "se"}, "mode")
+CTX = build_workflow_context(config)
+print_workflow_summary(CTX)
 
-SAMPLES_CONFIG = config.get("samples", "config/samples.yml")
-SAMPLE_DATA = load_sample_data(SAMPLES_CONFIG)
+OUTDIR = PATHS.outdir
+ENV = "../envs/chipseq.yml"
 
-TREATMENTS = SAMPLE_DATA["treatments"]
-CONTROL_SAMPLES = SAMPLE_DATA["control_samples"]
-RAW_SAMPLE_NAMES = unique_list(TREATMENTS + CONTROL_SAMPLES)
+MODE = CTX.mode
+SAMPLES = CTX.samples
+SAMPLE_PATTERN = CTX.sample_pattern
+TREATMENTS = CTX.treatments
+TREATMENT_PATTERN = CTX.treatment_pattern
 
-FASTQS = load_fastq_index(config, MODE)
-DISCOVERED_SAMPLES = sorted(FASTQS.keys())
+USE_POOLED_CONTROL = CTX.use_pooled_control
+POOLED_CONTROL_PATTERN = CTX.pooled_control_pattern
+HAS_EFFECTIVE_CONTROL = CTX.has_effective_control
+EFFECTIVE_CONTROLS = CTX.effective_controls
 
-# If samples.yml declares samples, only use declared samples for alignment.
-# If treatments is empty, fall back to all discovered FASTQs and treat them as peak-calling targets.
-SAMPLE_NAMES = sorted(set(RAW_SAMPLE_NAMES or DISCOVERED_SAMPLES))
-if not SAMPLE_NAMES:
-    raise ValueError("No samples were declared in samples.yml and no FASTQs were discovered.")
+CALL_PEAK_MODES = CTX.call_peak_modes
+CALL_PEAK_TYPES = CTX.call_peak_types
+REPLICATE_GROUPS = CTX.replicate_groups
 
-TREATMENTS = TREATMENTS or SAMPLE_NAMES
-PEAK_TREATMENTS = TREATMENTS
-SAMPLE_PATTERN = "|".join(re.escape(sample) for sample in SAMPLE_NAMES)
-TREATMENT_PATTERN = "|".join(re.escape(treatment) for treatment in PEAK_TREATMENTS)
-validate_sample_fastqs(SAMPLE_NAMES, FASTQS, MODE)
+ENABLE_DEEPTOOLS_PROFILE = CTX.enable_deeptools_profile
+ENABLE_CHIPQC = CTX.enable_chipqc
+ENABLE_HOMER = CTX.enable_homer
 
-CONTROL_STRATEGY = SAMPLE_DATA["control_strategy"]
-USE_POOLED_CONTROL = CONTROL_STRATEGY == "pooled"
-POOLED_CONTROL_GROUPS = SAMPLE_DATA["pooled_control_groups"]
-POOLED_CONTROL_NAMES = sorted(POOLED_CONTROL_GROUPS)
-POOLED_CONTROL_PATTERN = "|".join(re.escape(pool) for pool in POOLED_CONTROL_NAMES)
-TREATMENT_TO_CONTROL = SAMPLE_DATA["control_map"]
-EFFECTIVE_CONTROLS = sorted(set(TREATMENT_TO_CONTROL.values()))
-HAS_EFFECTIVE_CONTROL = bool(TREATMENT_TO_CONTROL)
-
-CALL_PEAK_MODES = as_list(config.get("call_peak_modes", ["with_control", "without_control"]))
-CALL_PEAK_TYPES = as_list(config.get("call_peak_types", ["narrow", "broad"]))
-validate_choices(CALL_PEAK_MODES, {"with_control", "without_control"}, "call_peak_modes")
-validate_choices(CALL_PEAK_TYPES, {"narrow", "broad"}, "call_peak_types")
-
-DEFAULT_PEAK_MODE = select_default_peak_mode(CALL_PEAK_MODES, HAS_EFFECTIVE_CONTROL)
-DEFAULT_PEAK_TYPE = "narrow" if "narrow" in CALL_PEAK_TYPES else CALL_PEAK_TYPES[0]
-
-REPLICATE_CONFIG = config.get("replicates", "config/replicates.yml")
-REPLICATE_DATA = load_replicate_data(REPLICATE_CONFIG)
-REPLICATE_PEAK_MODE = config.get("replicate_peak_mode", DEFAULT_PEAK_MODE)
-REPLICATE_PEAK_TYPE = config.get("replicate_peak_type", DEFAULT_PEAK_TYPE)
-validate_peak_selection(
-    REPLICATE_PEAK_MODE,
-    REPLICATE_PEAK_TYPE,
-    CALL_PEAK_MODES,
-    CALL_PEAK_TYPES,
-    HAS_EFFECTIVE_CONTROL,
-    "replicate",
-)
-REPLICATE_GROUPS = valid_replicate_groups(REPLICATE_DATA, PEAK_TREATMENTS)
-
-ENABLE_DEEPTOOLS_PROFILE = bool(config.get("enable_deeptools_profile", bool(config.get("regions_bed"))))
-if ENABLE_DEEPTOOLS_PROFILE and not config.get("regions_bed"):
-    raise ValueError("config['regions_bed'] is required when enable_deeptools_profile is true.")
-
-ENABLE_CHIPQC = bool(config.get("enable_chipqc", False))
-CHIPQC_PEAK_MODE = config.get("chipqc_peak_mode", DEFAULT_PEAK_MODE)
-CHIPQC_PEAK_TYPE = config.get("chipqc_peak_type", DEFAULT_PEAK_TYPE)
-if ENABLE_CHIPQC:
-    validate_peak_selection(
-        CHIPQC_PEAK_MODE,
-        CHIPQC_PEAK_TYPE,
-        CALL_PEAK_MODES,
-        CALL_PEAK_TYPES,
-        HAS_EFFECTIVE_CONTROL,
-        "chipqc",
-    )
-
-ENABLE_HOMER = bool(config.get("enable_homer", False))
-HOMER_PEAK_MODE = config.get("homer_peak_mode", DEFAULT_PEAK_MODE)
-HOMER_PEAK_TYPE = config.get("homer_peak_type", DEFAULT_PEAK_TYPE)
-HOMER_INPUT_SOURCE = config.get("homer_input_source", "replicate_intersect")
-validate_choices([HOMER_INPUT_SOURCE], {"sample_peaks", "replicate_intersect"}, "homer_input_source")
-if ENABLE_HOMER:
-    validate_peak_selection(
-        HOMER_PEAK_MODE,
-        HOMER_PEAK_TYPE,
-        CALL_PEAK_MODES,
-        CALL_PEAK_TYPES,
-        HAS_EFFECTIVE_CONTROL,
-        "homer",
-    )
-    if not config.get("homer_genome"):
-        raise ValueError("config['homer_genome'] is required when enable_homer is true.")
-
-HOMER_EXCLUDE_TARGETS = set(as_list(config.get("homer_exclude_targets", [])))
-HOMER_TARGETS = REPLICATE_GROUPS if HOMER_INPUT_SOURCE == "replicate_intersect" else PEAK_TREATMENTS
-HOMER_TARGETS = [target for target in HOMER_TARGETS if target not in HOMER_EXCLUDE_TARGETS]
-HOMER_RESULT_TAG = f"{HOMER_INPUT_SOURCE}_{HOMER_PEAK_MODE}_{HOMER_PEAK_TYPE}"
-if ENABLE_HOMER and HOMER_INPUT_SOURCE == "replicate_intersect" and not HOMER_TARGETS:
-    raise ValueError(
-        "HOMER is configured to use replicate_intersect, but no valid replicate groups were found. "
-        "Check config['replicates'] and config/replicates.yml."
-    )
-
-print("Mode: " + MODE)
-print("Raw samples: " + ",".join(SAMPLE_NAMES))
-print("Peak treatments: " + ",".join(PEAK_TREATMENTS))
-print("Control strategy: " + CONTROL_STRATEGY)
-print("Peak outputs: " + ";".join([f"{m}:{t}" for m in CALL_PEAK_MODES for t in CALL_PEAK_TYPES]))
-print("Replicate groups: " + (",".join(REPLICATE_GROUPS) if REPLICATE_GROUPS else "none"))
-print("ChIPQC: " + ("enabled" if ENABLE_CHIPQC else "disabled"))
-print("HOMER: " + ("enabled" if ENABLE_HOMER else "disabled"))
+CHIPQC_PEAK_MODE = CTX.chipqc_peak_mode
+CHIPQC_PEAK_TYPE = CTX.chipqc_peak_type
+HOMER_PEAK_MODE = CTX.homer_peak_mode
+HOMER_PEAK_TYPE = CTX.homer_peak_type
+HOMER_RESULT_TAG = CTX.homer_result_tag
 
 
 include:
@@ -129,16 +51,9 @@ include:
     "rules/qc.smk"
 
 include:
-    "rules/motif.smk"
+    "rules/homer.smk"
 
 
 rule all:
     input:
-        expand("aligned_data/{sample}.sorted.rmdup.bam", sample=SAMPLE_NAMES),
-        expand("aligned_data/{sample}.sorted.rmdup.bam.bai", sample=SAMPLE_NAMES),
-        expand("tracks/{sample}.sorted.rmdup.CPM.bw", sample=SAMPLE_NAMES),
-        expand("deeptools_profile/{sample}.scale.png", sample=SAMPLE_NAMES) if ENABLE_DEEPTOOLS_PROFILE else [],
-        callpeak_outputs(PEAK_TREATMENTS, CALL_PEAK_MODES, CALL_PEAK_TYPES, HAS_EFFECTIVE_CONTROL),
-        expand("replicate_intersect/{group}_intersect.bed", group=REPLICATE_GROUPS),
-        CHIPQC_DONE if ENABLE_CHIPQC else [],
-        homer_outputs(HOMER_TARGETS, HOMER_RESULT_TAG) if ENABLE_HOMER else [],
+        all_outputs(CTX)

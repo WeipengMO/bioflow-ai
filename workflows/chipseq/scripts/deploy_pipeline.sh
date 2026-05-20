@@ -11,7 +11,7 @@ Create a ChIP-seq/CUT&Tag Snakemake project directory.
 The script copies editable example files:
     config/config.example.yml     -> <project_dir>/config/config.yml
     config/samples.example.yml    -> <project_dir>/config/samples.yml
-    config/replicates.example.yml -> <project_dir>/config/replicates.yml
+    config/run_snakemake.env.example -> <project_dir>/config/run_snakemake.env
 
 The script links reusable pipeline files:
     Snakefile, rules/, envs/, scripts/, run_snakemake.sh
@@ -104,7 +104,7 @@ link_item() {
 
 copy_example "config/config.example.yml" "config/config.yml"
 copy_example "config/samples.example.yml" "config/samples.yml"
-copy_example "config/replicates.example.yml" "config/replicates.yml"
+copy_example "config/run_snakemake.env.example" "config/run_snakemake.env"
 
 link_item "Snakefile"
 link_item "rules"
@@ -119,6 +119,7 @@ Deployment complete:
 
 Next steps:
   1. Put FASTQ files in $PROJECT_DIR/raw_data
-  2. Edit $PROJECT_DIR/config/config.yml, $PROJECT_DIR/config/samples.yml, and $PROJECT_DIR/config/replicates.yml
-  3. Run: cd "$PROJECT_DIR" && ./run_snakemake.sh -n --cores 1
+  2. Edit $PROJECT_DIR/config/config.yml and $PROJECT_DIR/config/samples.yml
+  3. Optional: edit $PROJECT_DIR/config/run_snakemake.env for local runtime settings
+  4. Run: cd "$PROJECT_DIR" && ./run_snakemake.sh -n --cores 1
 EOF

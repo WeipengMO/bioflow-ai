@@ -1,33 +1,42 @@
-# Treatment samples to call peaks on.
-# Sample names must match FASTQ names after removing the read suffix, or the sample column in fastq_manifest.tsv.
-treatments:
-  - WT_H3K27ac_rep1
-  - WT_H3K27ac_rep2
-  - KO_H3K27ac_rep1
-  - KO_H3K27ac_rep2
+# BioFlowAI ChIP-seq/CUT&Tag sample metadata.
+#
+# Rule for AI/project setup:
+# - Each FASTQ sample is listed once.
+# - role is required and must be treatment or control.
+# - role: treatment marks experimental ChIP/CUT&Tag samples used for peak calling and downstream peak analysis.
+# - role: control marks input/IgG/control samples. They are aligned and deduplicated, but are not peak-called as treatments.
+# - group names biological replicates for consensus peaks.
+# - treatment.control points to either one control sample or one control pool.
+# - control.pool is optional. Only control samples with the same pool value are merged.
 
-# Control strategy:
-#   none    - call peaks without control only
-#   matched - each treatment has one matched control in controls.matched
-#   pooled  - merge one or more control groups and assign each treatment to one pooled control
-controls:
-  strategy: pooled
+# Treatment samples
+WT_H3K27ac_rep1:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_input_pool
+WT_H3K27ac_rep2:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_input_pool
+KO_H3K27ac_rep1:
+  role: treatment
+  group: KO_H3K27ac
+  control: KO_input_pool
+KO_H3K27ac_rep2:
+  role: treatment
+  group: KO_H3K27ac
+  control: KO_input_pool
 
-  pooled:
-    WT_input_pool:
-      treatments:
-        - WT_H3K27ac_rep1
-        - WT_H3K27ac_rep2
-      controls:
-        - WT_Input_rep1
-        - WT_Input_rep2
-
-    KO_input_pool:
-      treatments:
-        - KO_H3K27ac_rep1
-        - KO_H3K27ac_rep2
-      controls:
-        - KO_Input_rep1
-        - KO_Input_rep2
-
-  matched: {}
+# Control samples
+WT_Input_rep1:
+  role: control
+  pool: WT_input_pool
+WT_Input_rep2:
+  role: control
+  pool: WT_input_pool
+KO_Input_rep1:
+  role: control
+  pool: KO_input_pool
+KO_Input_rep2:
+  role: control
+  pool: KO_input_pool

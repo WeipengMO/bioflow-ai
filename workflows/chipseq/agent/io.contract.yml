@@ -1,33 +1,33 @@
 required_config_keys:
   - mode
-  - samples
+  - sample_config
   - raw_data_dir
   - genome
   - gsize
 
 optional_config_keys:
-  - workdir
-  - replicates
   - fastq_manifest
   - regions_bed
+  - blacklist
   - call_peak_modes
   - call_peak_types
+  - enable_post_markdup_filter
+  - post_markdup_min_mapq
+  - post_markdup_view_extra
   - enable_deeptools_profile
   - enable_chipqc
   - enable_homer
   - chipqc_sample_sheet
   - homer_genome
-  - homer_blacklist
 
 sample_metadata:
   file: config/samples.yml
   schema:
-    treatments: list[str]
-    controls:
-      strategy: one_of[none, matched, pooled]
-      pooled_name: str
-      pooled_samples: list[str]
-      matched: map[treatment_sample, control_sample]
+    sample_name:
+      role: required one_of[treatment, control]; treatment samples are peak-called, control samples are only used as controls
+      group: optional biological replicate group for treatment samples
+      control: optional control sample or pooled control name for treatment samples
+      pool: optional pooled control name for control samples; controls with the same pool are merged
 
 fastq_manifest:
   file: config/fastq_manifest.tsv
@@ -38,19 +38,21 @@ fastq_manifest:
 
 generated_outputs:
   bams:
-    - aligned_data/{sample}.sorted.rmdup.bam
-    - aligned_data/{sample}.sorted.rmdup.bam.bai
+    - results/aligned_data/{sample}.sorted.rmdup.bam
+    - results/aligned_data/{sample}.sorted.rmdup.bam.bai
+    - results/aligned_data/{sample}.sorted.rmdup.filtered.bam
+    - results/aligned_data/{sample}.sorted.rmdup.filtered.bam.bai
   tracks:
-    - tracks/{sample}.sorted.rmdup.CPM.bw
+    - results/bigwig/{sample}.sorted.rmdup.CPM.bw
   peaks:
-    - macs3_results/narrow/{sample}_peaks.narrowPeak
-    - macs3_results/broad/{sample}_peaks.broadPeak
-    - macs3_results/narrow_no_control/{sample}_peaks.narrowPeak
-    - macs3_results/broad_no_control/{sample}_peaks.broadPeak
+    - results/macs3_results/narrow/{sample}_peaks.narrowPeak
+    - results/macs3_results/broad/{sample}_peaks.broadPeak
+    - results/macs3_results/narrow_no_control/{sample}_peaks.narrowPeak
+    - results/macs3_results/broad_no_control/{sample}_peaks.broadPeak
   consensus:
-    - replicate_intersect/{group}_intersect.bed
+    - results/replicate_intersect/{group}_intersect.bed
   reports:
-    - reports/chipqc/
-    - reports/homer/
+    - results/reports/chipqc/
+    - results/reports/homer/
   logs:
-    - logs/
+    - results/logs/

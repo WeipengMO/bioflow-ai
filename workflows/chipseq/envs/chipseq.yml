@@ -13,11 +13,12 @@ dependencies:
   - idr
 
   # alignment / read processing
-  - bowtie
+  - fastp
   - bowtie2
   - samtools
   - bedtools
   - subread
+  - homer
 
   # signal / visualization
   - deeptools

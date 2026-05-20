@@ -2,9 +2,16 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SNAKEMAKE_RUNTIME_CONFIG="${SNAKEMAKE_RUNTIME_CONFIG:-$SCRIPT_DIR/config/run_snakemake.env}"
+
+if [[ -f "$SNAKEMAKE_RUNTIME_CONFIG" ]]; then
+    # shellcheck disable=SC1090
+    source "$SNAKEMAKE_RUNTIME_CONFIG"
+fi
+
 SNAKEFILE="${SNAKEFILE:-$SCRIPT_DIR/Snakefile}"
-SNAKEMAKE_CORES="${SNAKEMAKE_CORES:-110}"
-SNAKEMAKE_CONDA_PREFIX="${SNAKEMAKE_CONDA_PREFIX:-/data/user/mowp/snakemake_conda_envs}"
+: "${SNAKEMAKE_CORES:?Set SNAKEMAKE_CORES in config/run_snakemake.env or the environment.}"
+: "${SNAKEMAKE_CONDA_PREFIX:?Set SNAKEMAKE_CONDA_PREFIX in config/run_snakemake.env or the environment.}"
 SNAKEMAKE_CACHE_DIR="${SNAKEMAKE_CACHE_DIR:-$SCRIPT_DIR/.snakemake/cache}"
 SNAKEMAKE_TMPDIR="${SNAKEMAKE_TMPDIR:-$SNAKEMAKE_CACHE_DIR/tmp}"
 

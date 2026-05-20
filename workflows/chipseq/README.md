@@ -1,44 +1,6 @@
 # ChIP-seq / CUT&Tag Workflow
 
-## Quick Start
-
-Create a project directory from this workflow template:
-
-```bash
-cd workflows/chipseq
-./scripts/deploy_pipeline.sh /path/to/chipseq_project
-cd /path/to/chipseq_project
-```
-
-Prepare project config and metadata:
-
-```bash
-cp config/config.example.yml config/config.yml
-cp config/samples.example.yml config/samples.yml
-cp config/replicates.example.yml config/replicates.yml
-mkdir -p raw_data resources
-```
-
-Put FASTQ files under `raw_data/`, edit `config/config.yml`, `config/samples.yml`, and `config/replicates.yml`, then run:
-
-```bash
-./run_snakemake.sh -n
-./run_snakemake.sh
-```
-
-The wrapper uses Snakemake conda environments by default and installs them under:
-
-```text
-/data/user/mowp/snakemake_conda_envs
-```
-
-Override this per run if needed:
-
-```bash
-SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs ./run_snakemake.sh
-```
-
-## Required Inputs
+## Inputs
 
 Project files:
 
@@ -51,24 +13,23 @@ raw_data/*.fastq.gz or raw_data/*.fq.gz
 Optional files:
 
 ```text
-config/replicates.yml
 config/fastq_manifest.tsv
 config/chipqc_sample_sheet.tsv
 ```
 
-Reference resources configured in `config/config.yml`:
+Reference files configured in `config/config.yml`:
 
 | Key | Required when | Meaning |
 |---|---:|---|
 | `genome` | always | Bowtie2 index prefix passed to `bowtie2 -x` |
 | `gsize` | peak calling | MACS3 genome size, such as `hs`, `mm`, or a numeric effective genome size |
+| `gtf` | `enable_homer: true` | Gene annotation GTF passed to `annotatePeaks.pl -gtf` |
 | `picard_path` | always | `picard` command or `/path/to/picard.jar` for MarkDuplicates |
 | `regions_bed` | `enable_deeptools_profile: true` | BED regions used by `computeMatrix` |
 | `homer_genome` | `enable_homer: true` | HOMER genome name such as `hg38`, or a FASTA path accepted by HOMER |
-| `homer_blacklist` | optional HOMER filtering | BED file of regions excluded before motif enrichment |
-| `chipqc_annotation` | optional ChIPQC annotation | Annotation value passed to `ChIPQC()`; leave empty to omit |
+| `blacklist` | optional blacklist filtering | BED file reused for both post-MarkDuplicates BAM filtering and HOMER peak filtering |
 
-## Reference Resource Preparation
+### Reference Files
 
 All genome-related files must use the same genome assembly. Do not mix `hg19`, `hg38`, `mm10`, and other assemblies in the same run.
 
@@ -77,21 +38,21 @@ All genome-related files must use the same genome assembly. Do not mix `hg19`, `
 `genome` must be a Bowtie2 index prefix, not only a FASTA path. For example, if these files exist:
 
 ```text
-resources/hg38/bowtie2_index/hg38.1.bt2
-resources/hg38/bowtie2_index/hg38.2.bt2
+/path/to/hg38/bowtie2_index/hg38.1.bt2
+/path/to/hg38/bowtie2_index/hg38.2.bt2
 ...
 ```
 
 set:
 
 ```yaml
-genome: resources/hg38/bowtie2_index/hg38
+genome: /path/to/hg38/bowtie2_index/hg38
 ```
 
 You can build the index from a genome FASTA:
 
 ```bash
-bowtie2-build resources/hg38.fa resources/hg38/bowtie2_index/hg38
+bowtie2-build /path/to/hg38.fa /path/to/hg38/bowtie2_index/hg38
 ```
 
 ### regions_bed for deepTools
@@ -105,19 +66,18 @@ computeMatrix ... -R ${regions_bed} -S sample.bw
 Common choices are gene bodies, promoters, enhancers, or a custom BED of loci relevant to the experiment. For a UCSC RefSeq gene-body BED on hg38:
 
 ```bash
-mkdir -p resources
-wget -O resources/hg38.refGene.txt.gz \
+wget -O /path/to/hg38.refGene.txt.gz \
   https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz
-zcat resources/hg38.refGene.txt.gz \
+zcat /path/to/hg38.refGene.txt.gz \
   | awk 'BEGIN{OFS="\t"} {print $3,$5,$6,$13,0,$4}' \
   | sort -k1,1 -k2,2n \
-  > resources/hg38.refGene.bed
+  > /path/to/hg38.refGene.bed
 ```
 
 Then set:
 
 ```yaml
-regions_bed: resources/hg38.refGene.bed
+regions_bed: /path/to/hg38.refGene.bed
 ```
 
 For other assemblies, replace `hg38` in the UCSC URL with the target assembly if the table is available.
@@ -150,74 +110,78 @@ homer_genome: hg38
 or a FASTA path if that is how your HOMER environment is configured:
 
 ```yaml
-homer_genome: resources/hg38.fa
+homer_genome: /path/to/hg38.fa
 ```
 
-### HOMER Blacklist
+### GTF for HOMER Annotation
 
-`homer_blacklist` is optional. If set, peaks are filtered with:
+`gtf` is used by the HOMER peak annotation step:
 
 ```bash
-bedtools intersect -v -a peaks.bed -b ${homer_blacklist}
+annotatePeaks.pl peaks.bed ${homer_genome} -gtf ${gtf}
+```
+
+Set it to a gene annotation GTF from the same assembly as `genome`, `regions_bed`, `blacklist`, and `homer_genome`:
+
+```yaml
+gtf: /path/to/annotations.gtf
+```
+
+### Blacklist
+
+`blacklist` is optional. If set, both BAM and peak filtering use:
+
+```bash
+bedtools intersect -v -a peaks.bed -b ${blacklist}
 ```
 
 For human hg38, use the ENCODE blacklist from the Boyle-Lab Blacklist repository:
 
 ```bash
-mkdir -p resources
-wget -O resources/hg38-blacklist.v2.bed.gz \
+wget -O /path/to/hg38-blacklist.v2.bed.gz \
   https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz
-gunzip -c resources/hg38-blacklist.v2.bed.gz > resources/hg38-blacklist.v2.bed
+gunzip -c /path/to/hg38-blacklist.v2.bed.gz > /path/to/hg38-blacklist.v2.bed
 ```
 
 Then set:
 
 ```yaml
-homer_blacklist: resources/hg38-blacklist.v2.bed
+blacklist: /path/to/hg38-blacklist.v2.bed
 ```
 
 For other assemblies, check the `lists/` directory in the Boyle-Lab Blacklist repository and use the matching assembly file.
 
-## Sample Metadata
+### Sample Metadata
 
-`config/samples.yml` defines which samples are treatments and how controls are used.
+`config/samples.yml` defines sample metadata. `config/config.yml` points to it with `sample_config`.
 
-Supported control strategies:
+Rules for project setup:
 
-| Strategy | Meaning |
-|---|---|
-| `none` | No control BAM is used; only no-control peaks are valid |
-| `matched` | Each treatment maps to one control in `controls.matched` |
-| `pooled` | One or more control groups are merged, and each treatment is assigned to exactly one pooled control |
+- Each FASTQ sample is listed once.
+- `role` is required and must be `treatment` or `control`.
+- `role: treatment` marks an experimental ChIP/CUT&Tag sample. These samples are used for MACS3 peak calling, replicate consensus, ChIPQC rows, and HOMER targets.
+- `role: control` marks an input/IgG/control sample. These samples are preprocessed into BAM/bigWig files, but they are not peak-called as treatments.
+- `group` names biological replicates for consensus peaks.
+- `control` on a treatment points to either one control sample or one control pool.
+- `pool` on a control sample is optional. Only control samples with the same `pool` value are merged into a pooled control.
 
-Example pooled control setup:
+**Example pooled control setup:**
 
 ```yaml
-treatments:
-  - WT_H3K27ac_rep1
-  - WT_H3K27ac_rep2
-  - KO_H3K27ac_rep1
-  - KO_H3K27ac_rep2
-
-controls:
-  strategy: pooled
-
-  pooled:
-    WT_input_pool:
-      treatments:
-        - WT_H3K27ac_rep1
-        - WT_H3K27ac_rep2
-      controls:
-        - WT_Input_rep1
-        - WT_Input_rep2
-
-    KO_input_pool:
-      treatments:
-        - KO_H3K27ac_rep1
-        - KO_H3K27ac_rep2
-      controls:
-        - KO_Input_rep1
-        - KO_Input_rep2
+WT_H3K27ac_rep1:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_input_pool
+WT_H3K27ac_rep2:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_input_pool
+WT_Input_rep1:
+  role: control
+  pool: WT_input_pool
+WT_Input_rep2:
+  role: control
+  pool: WT_input_pool
 ```
 
 This means:
@@ -226,41 +190,62 @@ This means:
 WT_input_pool = merge(WT_Input_rep1, WT_Input_rep2)
 WT_H3K27ac_rep1 uses WT_input_pool
 WT_H3K27ac_rep2 uses WT_input_pool
-
-KO_input_pool = merge(KO_Input_rep1, KO_Input_rep2)
-KO_H3K27ac_rep1 uses KO_input_pool
-KO_H3K27ac_rep2 uses KO_input_pool
 ```
 
-Example matched control setup:
+Here, `WT_H3K27ac_rep1` and `WT_H3K27ac_rep2` are treatment samples and will be peak-called. `WT_Input_rep1` and `WT_Input_rep2` are control samples and are only used through `WT_input_pool`.
+
+**Example matched control setup:**
 
 ```yaml
-treatments:
-  - WT_H3K27ac_rep1
-  - WT_H3K27ac_rep2
-  - KO_H3K27ac_rep1
-  - KO_H3K27ac_rep2
-
-controls:
-  strategy: matched
-  matched:
-    WT_H3K27ac_rep1: WT_Input_rep1
-    WT_H3K27ac_rep2: WT_Input_rep2
-    KO_H3K27ac_rep1: KO_Input_rep1
-    KO_H3K27ac_rep2: KO_Input_rep2
+WT_H3K27ac_rep1:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_Input_rep1
+WT_H3K27ac_rep2:
+  role: treatment
+  group: WT_H3K27ac
+  control: WT_Input_rep2
+WT_Input_rep1:
+  role: control
+WT_Input_rep2:
+  role: control
 ```
 
-`config/replicates.yml` defines biological replicate groups used for consensus peaks:
+No `pool` field is needed for matched controls; the treatment points directly to one control sample.
+In this example, only the two `role: treatment` samples are peak-called; the two `role: control` samples are used as MACS3 controls.
+
+**Example without controls:**
 
 ```yaml
-WT_H3K27ac:
-  - WT_H3K27ac_rep1
-  - WT_H3K27ac_rep2
+WT_H3K27ac_rep1:
+  role: treatment
+  group: WT_H3K27ac
+WT_H3K27ac_rep2:
+  role: treatment
+  group: WT_H3K27ac
+KO_H3K27ac_rep1:
+  role: treatment
+  group: KO_H3K27ac
+KO_H3K27ac_rep2:
+  role: treatment
+  group: KO_H3K27ac
 ```
+
+For a no-control run, do not add `role: control` samples and do not set `control` on treatment samples. In `config/config.yml`, use no-control peak modes:
+
+```yaml
+call_peak_modes:
+  - without_control
+replicate_peak_mode: without_control
+chipqc_peak_mode: without_control
+homer_peak_mode: without_control
+```
+
+No-control MACS3 outputs are written under `<outdir>/macs3_results/narrow_no_control/` or `<outdir>/macs3_results/broad_no_control/`.
 
 Groups with fewer than two valid treatment samples are ignored.
 
-## FASTQ Input
+### FASTQ Input
 
 For paired-end data, automatic FASTQ discovery supports names such as:
 
@@ -299,161 +284,256 @@ Then set:
 fastq_manifest: config/fastq_manifest.tsv
 ```
 
-## Running Logic
-
-The workflow DAG is built from `config/config.yml`, `config/samples.yml`, discovered FASTQs or `config/fastq_manifest.tsv`, and optional replicate groups.
-
-Execution order:
-
-1. `fastp`
-   - Inputs: raw FASTQs from `raw_data_dir` or `fastq_manifest`.
-   - Outputs: temporary cleaned FASTQs under `clean_data/`.
-   - Reports: `qc/fastp/{sample}.html` and `.json`.
-
-2. `align_reads`
-   - Runs `bowtie2` against `genome`.
-   - Sorts alignments with `samtools sort`.
-   - Outputs temporary sorted BAMs under `aligned_data/`.
-
-3. `mark_duplicates`
-   - Runs Picard `MarkDuplicates`.
-   - Outputs final duplicate-removed BAMs and indexes:
-
-```text
-aligned_data/{sample}.sorted.rmdup.bam
-aligned_data/{sample}.sorted.rmdup.bam.bai
-qc/mark_duplicates/{sample}.metrics.txt
-```
-
-4. `bam_coverage`
-   - Runs deepTools `bamCoverage`.
-   - Outputs normalized bigWig tracks:
-
-```text
-tracks/{sample}.sorted.rmdup.CPM.bw
-```
-
-5. `compute_matrix_profile`
-   - Runs only when `enable_deeptools_profile: true`.
-   - Uses `regions_bed`.
-   - Outputs:
-
-```text
-deeptools_profile/{sample}.scale.png
-```
-
-6. `merge_pooled_control`
-   - Runs only when `controls.strategy: pooled`.
-   - Runs once for each entry under `controls.pooled`.
-   - Merges `controls.pooled.<pool_name>.controls` into:
-
-```text
-aligned_data/{pool_name}.sorted.rmdup.bam
-aligned_data/{pool_name}.sorted.rmdup.bam.bai
-```
-
-7. `macs3_callpeak`
-   - Runs one job for each configured treatment, peak mode, and peak type.
-   - With-control peaks require `matched` or `pooled` controls.
-   - Output directories:
-
-```text
-macs3_results/narrow/
-macs3_results/broad/
-macs3_results/narrow_no_control/
-macs3_results/broad_no_control/
-```
-
-8. `replicate_intersect`
-   - Uses `config/replicates.yml`.
-   - Intersects replicate peak files with `bedtools multiinter`.
-   - `replicate_min_support` controls the minimum number of replicates required; if omitted, all replicates in the group must support the interval.
-   - Outputs:
-
-```text
-replicate_intersect/{group}_intersect.bed
-```
-
-9. `generate_chipqc_sample_sheet`
-   - Runs only when `enable_chipqc: true` and `chipqc_sample_sheet` is empty.
-   - Generates:
-
-```text
-reports/chipqc/chipqc_sample_sheet.generated.tsv
-```
-
-10. `chipqc_report`
-    - Runs only when `enable_chipqc: true`.
-    - Uses treatment BAMs, control BAMs if configured, selected MACS3 peak files, and the ChIPQC sample sheet.
-    - Outputs the ChIPQC report directory and completion marker:
-
-```text
-reports/chipqc/
-reports/chipqc/.chipqc_complete
-```
-
-11. `homer_prepare_peaks`
-    - Runs only when `enable_homer: true`.
-    - Uses either replicate consensus peaks or per-sample MACS3 peaks depending on `homer_input_source`.
-    - If `homer_blacklist` is set, removes blacklisted intervals before motif enrichment.
-    - Outputs prepared temporary BED files under `homer_inputs/`.
-
-12. `homer_find_motifs`
-    - Runs `findMotifsGenome.pl`.
-    - Skips HOMER if fewer than `homer_min_peaks` peaks remain after filtering.
-    - Outputs:
-
-```text
-reports/homer/{homer_input_source}_{homer_peak_mode}_{homer_peak_type}/{target}/
-```
-
-## Main Outputs
-
-```text
-clean_data/                         # temporary cleaned FASTQs
-aligned_data/*.sorted.rmdup.bam     # final BAMs
-aligned_data/*.sorted.rmdup.bam.bai
-qc/fastp/
-qc/mark_duplicates/
-tracks/*.CPM.bw
-deeptools_profile/*.scale.png
-macs3_results/
-replicate_intersect/
-reports/chipqc/
-reports/homer/
-logs/
-```
-
-## Configuration Keys
+## Configuration
 
 | Key | Meaning |
 |---|---|
 | `mode` | `pe` or `se` |
+| `outdir` | Root directory for generated outputs; default is `results` |
+| `sample_config` | YAML file defining sample roles, replicate groups, and controls |
 | `raw_data_dir` | Directory containing FASTQ files |
 | `fastq_manifest` | Optional TSV with `sample`, `read1`, and optional `read2` columns |
-| `samples` | YAML file defining treatment and control samples |
-| `replicates` | YAML file defining replicate groups |
 | `genome` | Bowtie2 index prefix |
 | `regions_bed` | BED regions for deepTools profile plots |
+| `gtf` | Gene annotation GTF used by HOMER peak annotation |
 | `gsize` | MACS3 genome size |
 | `picard_path` | Picard command or JAR path |
 | `call_peak_modes` | `with_control`, `without_control`, or both |
 | `call_peak_types` | `narrow`, `broad`, or both |
+| `enable_post_markdup_filter` | Apply BAM filtering after `MarkDuplicates`; default `true` |
+| `post_markdup_min_mapq` | Minimum MAPQ passed to `samtools view -q`; default `30` |
+| `post_markdup_view_extra` | Extra arguments appended to `samtools view`; if empty, the workflow picks mode-specific defaults |
+| `macs3_broad_cutoff` | Value passed to `--broad-cutoff` for broad peak calling |
+| `macs3_extra` | Extra arguments appended directly to `macs3 callpeak`, such as `--qvalue 0.01` |
 | `replicate_peak_mode` | Peak mode used for replicate consensus |
 | `replicate_peak_type` | Peak type used for replicate consensus |
-| `replicate_min_support` | Optional minimum replicate support for consensus intervals |
 | `enable_deeptools_profile` | Generate deepTools matrix/profile plots |
 | `enable_chipqc` | Generate ChIPQC report |
 | `chipqc_sample_sheet` | Optional user-provided ChIPQC sample sheet |
 | `chipqc_peak_mode` | Peak mode used by ChIPQC |
 | `chipqc_peak_type` | Peak type used by ChIPQC |
-| `chipqc_annotation` | Optional annotation argument for ChIPQC |
 | `enable_homer` | Run HOMER motif enrichment |
 | `homer_input_source` | `replicate_intersect` or `sample_peaks` |
 | `homer_genome` | HOMER genome name or FASTA path |
-| `homer_blacklist` | Optional BED blacklist before HOMER |
+| `blacklist` | Optional BED blacklist reused by post-MarkDuplicates filtering and HOMER |
 | `homer_min_peaks` | Minimum peaks required to run HOMER; default is 50 |
 | `threads` | Per-rule thread settings |
+
+Advanced optional keys supported by the workflow but omitted from `config.example.yml`: `chipqc_annotation`, `chipqc_report_dir`, `chipqc_report_facet`, `homer_report_dir`, `homer_input_dir`, `homer_min_peaks`, and `workdir`.
+
+Default post-MarkDuplicates filtering is equivalent to:
+
+```bash
+samtools view -q 30 -f 2 -F 1804 -b input.rmdup.bam > filtered.bam
+bedtools intersect -v -abam filtered.bam -b ${blacklist} > filtered.rmblacklist.bam
+```
+
+In single-end mode, the default becomes `samtools view -q 30 -F 1796 -b`, which removes unmapped, secondary, QC-fail, and duplicate reads without applying a proper-pair filter.
+
+## Outputs
+
+```text
+<outdir>/clean_data/                         # temporary cleaned FASTQs
+<outdir>/aligned_data/*.sorted.rmdup.bam     # duplicate-removed BAMs
+<outdir>/aligned_data/*.sorted.rmdup.bam.bai
+<outdir>/aligned_data/*.sorted.rmdup.filtered.bam   # final analysis BAMs when enable_post_markdup_filter: true
+<outdir>/aligned_data/*.sorted.rmdup.filtered.bam.bai
+<outdir>/qc/fastp/
+<outdir>/qc/mark_duplicates/
+<outdir>/bigwig/*.CPM.bw
+<outdir>/deeptools_profile/*.scale.png
+<outdir>/macs3_results/
+<outdir>/replicate_intersect/
+<outdir>/reports/chipqc/
+<outdir>/reports/homer/
+<outdir>/logs/
+```
+
+## Workflow Logic
+
+The workflow DAG is built from `config/config.yml`, `config/samples.yml`, and discovered FASTQs or `config/fastq_manifest.tsv`.
+
+Execution order:
+
+1. `fastp`
+   - Inputs: raw FASTQs from `raw_data_dir` or `fastq_manifest`.
+  - Outputs: temporary cleaned FASTQs under `<outdir>/clean_data/`.
+  - Reports: `<outdir>/qc/fastp/{sample}.html` and `.json`.
+
+2. `align_reads`
+   - Runs `bowtie2` against `genome`.
+   - Sorts alignments with `samtools sort`.
+  - Outputs temporary sorted BAMs under `<outdir>/aligned_data/`.
+
+3. `mark_duplicates`
+   - Runs Picard `MarkDuplicates`.
+  - Outputs duplicate-removed BAMs and indexes:
+
+```text
+<outdir>/aligned_data/{sample}.sorted.rmdup.bam
+<outdir>/aligned_data/{sample}.sorted.rmdup.bam.bai
+<outdir>/qc/mark_duplicates/{sample}.metrics.txt
+```
+
+4. `filter_post_markdup`
+  - Runs by default after `mark_duplicates`.
+  - Applies `samtools view` filtering with `post_markdup_min_mapq` and `post_markdup_view_extra`.
+  - If `blacklist` is set, removes blacklist overlaps with `bedtools intersect -v -abam`.
+  - Can be disabled with `enable_post_markdup_filter: false`.
+  - Outputs:
+
+```text
+<outdir>/aligned_data/{sample}.sorted.rmdup.filtered.bam
+<outdir>/aligned_data/{sample}.sorted.rmdup.filtered.bam.bai
+```
+
+5. `bam_coverage`
+   - Runs deepTools `bamCoverage`.
+  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`, otherwise uses the duplicate-removed BAM.
+   - Outputs normalized bigWig tracks:
+
+```text
+<outdir>/bigwig/{sample}.sorted.rmdup.CPM.bw
+```
+
+6. `compute_matrix_profile`
+   - Runs only when `enable_deeptools_profile: true`.
+   - Uses `regions_bed`.
+   - Outputs:
+
+```text
+<outdir>/deeptools_profile/{sample}.scale.png
+```
+
+7. `merge_pooled_control`
+   - Runs only when control samples declare a shared `pool`.
+   - Runs once for each pool name.
+  - Merges the downstream analysis BAMs for control samples in that pool into:
+
+```text
+<outdir>/aligned_data/{pool_name}.sorted.rmdup.bam
+<outdir>/aligned_data/{pool_name}.sorted.rmdup.bam.bai
+```
+
+When `enable_post_markdup_filter: true`, pooled controls are written as:
+
+```text
+<outdir>/aligned_data/{pool_name}.sorted.rmdup.filtered.bam
+<outdir>/aligned_data/{pool_name}.sorted.rmdup.filtered.bam.bai
+```
+
+8. `macs3_callpeak`
+   - Runs one job for each configured treatment, peak mode, and peak type.
+   - With-control peaks require `matched` or `pooled` controls.
+   - No-control peaks use `without_control` and run MACS3 without a `-c` control BAM.
+  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`.
+   - `macs3_extra` is appended directly to `macs3 callpeak` for advanced options.
+   - Output directories:
+
+```text
+<outdir>/macs3_results/narrow/
+<outdir>/macs3_results/broad/
+<outdir>/macs3_results/narrow_no_control/
+<outdir>/macs3_results/broad_no_control/
+```
+
+9. `replicate_intersect`
+   - Uses treatment samples that share the same `group`.
+   - Intersects replicate peak files with `bedtools multiinter`.
+   - Runs only for groups with at least two treatment samples.
+   - Consensus intervals must be supported by all replicate peak files in that group.
+   - Outputs:
+
+```text
+<outdir>/replicate_intersect/{group}_intersect.bed
+```
+
+10. `generate_chipqc_sample_sheet`
+   - Runs only when `enable_chipqc: true` and `chipqc_sample_sheet` is empty.
+   - Derives the sheet from `samples`, control mapping, replicate groups, and selected peak files.
+   - Generates:
+
+```text
+<outdir>/reports/chipqc/chipqc_sample_sheet.generated.tsv
+```
+
+11. `chipqc_report`
+    - Runs only when `enable_chipqc: true`.
+    - Uses treatment BAMs, control BAMs if configured, selected MACS3 peak files, and the ChIPQC sample sheet.
+  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`.
+    - Outputs the ChIPQC report directory and completion marker:
+
+```text
+<outdir>/reports/chipqc/
+<outdir>/reports/chipqc/.chipqc_complete
+```
+
+12. `homer_prepare_motif_peaks`
+    - Runs only when `enable_homer: true`.
+    - Uses either replicate consensus peaks or per-sample MACS3 peaks depending on `homer_input_source`.
+    - Uses MACS summits for narrowPeak motif analysis when `homer_use_summit: true`; consensus BED inputs fall back to interval centers.
+    - If `blacklist` is set, removes blacklisted intervals before motif enrichment.
+    - Outputs prepared temporary BED files under `<outdir>/homer_inputs/`.
+
+13. `homer_prepare_annotation_peaks`
+    - Runs only when `enable_homer: true`.
+    - Uses full peak intervals instead of summit-centered 1 bp intervals.
+    - If `blacklist` is set, removes blacklisted intervals before annotation.
+    - Outputs prepared temporary BED files under `<outdir>/homer_inputs/`.
+
+14. `homer_find_motifs`
+    - Runs `findMotifsGenome.pl`.
+    - Skips HOMER if fewer than `homer_min_peaks` peaks remain after filtering.
+    - Starts from `homer_prepare_motif_peaks`.
+    - Shares the same target report directory with `homer_annotate_peaks`, so the workflow only removes stale motif-specific outputs at rule start.
+    - Outputs:
+
+```text
+<outdir>/reports/homer/{homer_input_source}_{homer_peak_mode}_{homer_peak_type}/{target}/.motifs_complete
+```
+
+15. `homer_annotate_peaks`
+    - Runs `annotatePeaks.pl` on the full-interval prepared BED from `homer_prepare_annotation_peaks`.
+    - Independent from `homer_find_motifs`; it does not wait for motif discovery outputs.
+    - Always passes `-gtf {gtf}` from `config/config.yml`.
+    - Writes `<outdir>/reports/homer/.../{target}/annotatePeaks.txt`.
+
+## Quick Start
+
+Create a project directory from this workflow template:
+
+```bash
+cd workflows/chipseq
+./scripts/deploy_pipeline.sh /path/to/chipseq_project
+cd /path/to/chipseq_project
+```
+
+Put FASTQ files under `raw_data/`, edit `config/config.yml` and `config/samples.yml`, then run:
+
+```bash
+./run_snakemake.sh -n
+./run_snakemake.sh
+```
+
+The wrapper uses Snakemake conda environments by default and installs them under:
+
+```text
+/data/user/mowp/snakemake_conda_envs
+```
+
+Set it persistently in `config/run_snakemake.env` if needed:
+
+```bash
+SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs
+```
+
+`config/run_snakemake.env.example` is only a template and is not loaded by `run_snakemake.sh`.
+
+Or override this per run:
+
+```bash
+SNAKEMAKE_CONDA_PREFIX=/path/to/snakemake_conda_envs ./run_snakemake.sh
+```
 
 ## Troubleshooting
 
@@ -467,12 +547,21 @@ Common checks:
 
 - Sample names in `config/samples.yml` match FASTQ-derived names or the `sample` column in `config/fastq_manifest.tsv`.
 - `genome` points to a Bowtie2 index prefix, not only a `.fa` file.
-- `regions_bed`, `homer_blacklist`, `homer_genome`, and `genome` use the same assembly.
-- In pooled mode, every treatment must appear in exactly one `controls.pooled.<pool_name>.treatments` list.
-- `controls.pooled.<pool_name>.controls` contains raw control sample names, not the pooled output name.
+- `regions_bed`, `blacklist`, `homer_genome`, and `genome` use the same assembly.
+- For pooled controls, treatment `control` values point to a pool name, and control samples declare that same `pool`.
+- For no-control runs, treatment samples must omit `control`, and `call_peak_modes` plus downstream peak modes should use `without_control`.
 - `call_peak_modes` includes `with_control` only when a matched or pooled control is configured.
 - ChIPQC uses the selected `chipqc_peak_mode` and `chipqc_peak_type`; those files must also be produced by `call_peak_modes` and `call_peak_types`.
-- If HOMER is skipped, check `logs/*.homer.prepare.*.log` and `logs/*.homer.*.log` for the number of peaks after blacklist filtering.
+- If HOMER is skipped, check `<outdir>/logs/*.homer.prepare.*.log` and `<outdir>/logs/*.homer.*.log` for the number of peaks after blacklist filtering.
+
+## Notes for AI Agents
+
+- Read this README and the files under `agent/` before editing config or running commands.
+- Prefer deploying the workflow into a separate project directory instead of modifying files under `workflows/chipseq/` directly.
+- Use `scripts/deploy_pipeline.sh` or the documented deployment steps when preparing a new analysis directory.
+- Treat `raw_data/`, user config files, and sample metadata as user-owned inputs unless the user explicitly asks for changes.
+- Start with `./run_snakemake.sh -n -p` before attempting a real execution.
+- When reporting back, summarize created files, unresolved required inputs, and the next recommended command.
 
 ## External Resource Links
 
