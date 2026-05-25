@@ -1,0 +1,64 @@
+version: 1
+
+inputs:
+  config/config.yml:
+    owner: user
+    required: true
+    description: Project-specific ATAC-seq workflow configuration.
+  config/samples.yml:
+    owner: user
+    required: true
+    description: Sample metadata keyed by sample name, with optional biological replicate group.
+  config/fastq_manifest.tsv:
+    owner: user
+    required: false
+    description: Explicit FASTQ mapping for irregular names or unmerged lanes.
+  raw_data/:
+    owner: user
+    required: true
+    description: FASTQ directory used when fastq_manifest is not set.
+
+external_references:
+  bowtie2_index:
+    config_key: genome
+    required: true
+  genome_size:
+    config_key: gsize
+    required: true
+  blacklist_bed:
+    config_key: blacklist
+    required: false
+  tss_bed:
+    config_key: tss_bed
+    required: false
+
+generated:
+  results/clean_data/:
+    safe_to_delete: true
+  results/aligned_data/:
+    safe_to_delete: true
+  results/bigwig/:
+    safe_to_delete: true
+  results/macs3_results/:
+    safe_to_delete: true
+  results/replicate_intersect/:
+    safe_to_delete: true
+  results/qc/:
+    safe_to_delete: true
+  results/reports/:
+    safe_to_delete: true
+  results/logs/:
+    safe_to_delete: true
+  .snakemake/:
+    safe_to_delete: conditional
+    note: Do not delete while a workflow is running.
+
+final_outputs:
+  - results/aligned_data/{sample}.sorted.rmdup.filtered.bam
+  - results/bigwig/{sample}.sorted.rmdup.filtered.CPM.bw
+  - results/macs3_results/narrow/{sample}_peaks.narrowPeak
+  - results/replicate_intersect/{group}_intersect.bed
+  - results/qc/frip/{sample}.frip.txt
+  - results/qc/insert_size/{sample}.insert_size_metrics.txt
+  - results/qc/tss_enrichment/{sample}.tss_profile.png
+  - results/reports/multiqc_report.html

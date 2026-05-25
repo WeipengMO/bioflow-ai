@@ -1,0 +1,5 @@
+sample	read1	read2
+WT_ATAC_rep1	raw_data/WT_ATAC_rep1_R1.fastq.gz	raw_data/WT_ATAC_rep1_R2.fastq.gz
+WT_ATAC_rep2	raw_data/WT_ATAC_rep2_R1.fastq.gz	raw_data/WT_ATAC_rep2_R2.fastq.gz
+KO_ATAC_rep1	raw_data/KO_ATAC_rep1_R1.fastq.gz	raw_data/KO_ATAC_rep1_R2.fastq.gz
+KO_ATAC_rep2	raw_data/KO_ATAC_rep2_R1.fastq.gz	raw_data/KO_ATAC_rep2_R2.fastq.gz

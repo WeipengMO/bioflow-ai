@@ -1,0 +1,70 @@
+# BioFlowAI ATAC-seq workflow configuration.
+# Copy this file to config/config.yml before running.
+
+mode: pe  # pe or se; paired-end is recommended for ATAC-seq fragment-size QC.
+outdir: results
+
+sample_config: config/samples.yml
+raw_data_dir: raw_data
+
+# Optional explicit FASTQ manifest. Leave empty to auto-discover FASTQs from raw_data_dir.
+# Recommended for irregular file names or multiple lanes that were not merged before analysis.
+fastq_manifest: ""
+
+# Reference files
+genome: /path/to/bowtie2/index/prefix
+gsize: hs  # Genome size for MACS3. Can be a number (e.g. 2.7e9) or a predefined code (hs, mm, etc.)
+blacklist: /path/to/ENCODE_blacklist.bed
+tss_bed: /path/to/tss.bed
+
+# Chromosome names removed before duplicate marking. Set [] to disable mitochondrial filtering.
+mitochondrial_chromosomes:
+  - chrM
+  - MT
+
+# Software dependency paths
+picard_path: picard
+
+# Core switches
+enable_tss_enrichment: true
+enable_multiqc: true
+
+# Tool-specific extra arguments
+fastp_extra: ""
+fastp_pe_extra: "--detect_adapter_for_pe"
+fastp_se_extra: ""
+bowtie2_extra: "--very-sensitive -X 2000 --no-mixed --no-discordant"
+mark_duplicates_extra: "REMOVE_DUPLICATES=true"
+alignment_filter_min_mapq: 30
+alignment_filter_view_extra: ""  # auto: PE uses -f 2 -F 3852, SE uses -F 3844
+bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
+
+# MACS3 ATAC-seq peak calling.
+# Defaults: PE uses -f BAMPE --keep-dup all -q 0.01; SE uses --nomodel --shift -100 --extsize 200 --keep-dup all -q 0.01.
+macs3_extra: ""
+
+# Union-style replicate consensus peaks. Candidate peaks are built from the merged union of all
+# replicate peaks, then retained when supported by at least this many replicates.
+consensus_min_support: 2
+
+# TSS enrichment profile from bigWig signal.
+compute_matrix_tss_extra: "reference-point --referencePoint TSS -b 2000 -a 2000 --skipZeros"
+plot_profile_extra: "--perGroup"
+
+# Optional report customization
+insert_size_extra: ""
+multiqc_extra: ""
+
+# Per-rule threads
+threads:
+  fastp: 8
+  bowtie2: 24
+  alignment_filter: 4
+  mark_duplicates: 4
+  blacklist_filter: 4
+  bam_coverage: 8
+  macs3: 1
+  insert_size: 2
+  frip: 4
+  tss_enrichment: 8
+  multiqc: 2

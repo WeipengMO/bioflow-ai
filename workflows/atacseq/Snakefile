@@ -1,0 +1,40 @@
+configfile:
+    "config/config.yml"
+
+workdir:
+    config.get("workdir", ".")
+
+
+include:
+    "rules/common.smk"
+
+
+CTX = build_workflow_context(config)
+print_workflow_summary(CTX)
+
+OUTDIR = PATHS.outdir
+ENV = "../envs/atacseq.yml"
+
+MODE = CTX.mode
+SAMPLES = CTX.samples
+SAMPLE_PATTERN = CTX.sample_pattern
+GROUPS = CTX.groups
+GROUP_PATTERN = CTX.group_pattern
+
+ENABLE_TSS_ENRICHMENT = CTX.enable_tss_enrichment
+ENABLE_MULTIQC = CTX.enable_multiqc
+
+
+include:
+    "rules/preprocess.smk"
+
+include:
+    "rules/peak_calling.smk"
+
+include:
+    "rules/qc.smk"
+
+
+rule all:
+    input:
+        all_outputs(CTX)

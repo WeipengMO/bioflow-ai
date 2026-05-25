@@ -1,0 +1,14 @@
+# BioFlowAI ATAC-seq sample metadata.
+#
+# Each FASTQ sample is listed once.
+# group is optional and names biological replicates for consensus peaks.
+# Samples with the same group and at least two replicates produce a consensus BED file.
+
+WT_ATAC_rep1:
+  group: WT_ATAC
+WT_ATAC_rep2:
+  group: WT_ATAC
+KO_ATAC_rep1:
+  group: KO_ATAC
+KO_ATAC_rep2:
+  group: KO_ATAC

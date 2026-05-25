@@ -1,0 +1,125 @@
+workflow:
+  name: atacseq
+  description: ATAC-seq workflow from FASTQ to filtered BAM, bigWig, MACS3 narrow peaks, replicate consensus peaks, FRiP, insert-size QC, TSS enrichment, and MultiQC.
+  status: development
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  sample_config: config/samples.example.yml
+
+commands:
+  deploy_project: ./scripts/deploy_pipeline.sh /path/to/atacseq_project
+  dry_run: snakemake -np --use-conda
+  run: snakemake --use-conda -j 16
+  unlock: snakemake --unlock
+  generate_fastq_manifest: python scripts/make_fastq_manifest.py --raw-data-dir raw_data --output config/fastq_manifest.tsv
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.yml
+    required: true
+  fastqs:
+    path: raw_data/
+    required: true
+  fastq_manifest:
+    path: config/fastq_manifest.tsv
+    required: false
+
+outputs:
+  aligned_bams:
+    path: results/aligned_data/
+  tracks:
+    path: results/bigwig/
+  macs3_peaks:
+    path: results/macs3_results/narrow/
+  replicate_consensus:
+    path: results/replicate_intersect/
+  qc:
+    path: results/qc/
+  reports:
+    path: results/reports/
+  logs:
+    path: results/logs/
+
+safety:
+  user_owned:
+    - raw_data/
+    - config/config.yml
+    - config/samples.yml
+    - config/fastq_manifest.tsv
+  safe_to_regenerate:
+    - results/clean_data/
+    - results/aligned_data/
+    - results/bigwig/
+    - results/macs3_results/
+    - results/replicate_intersect/
+    - results/qc/
+    - results/reports/
+    - results/logs/
+    - .snakemake/
+
+notes:
+  - Always run a dry-run before changing workflow logic.
+  - ATAC-seq reference files must be genome-build consistent: bowtie2 index, blacklist, TSS BED, and MACS3 gsize.
+  - Prefer paired-end data for insert-size QC and paired-end MACS3 BAMPE peak calling.
+  - Prefer fastq_manifest for irregular FASTQ names or multi-lane data that have not been merged.
+
+required_config_keys:
+  - mode
+  - sample_config
+  - raw_data_dir
+  - genome
+  - gsize
+
+optional_config_keys:
+  - fastq_manifest
+  - blacklist
+  - mitochondrial_chromosomes
+  - tss_bed
+  - enable_tss_enrichment
+  - enable_multiqc
+  - fastp_extra
+  - fastp_pe_extra
+  - fastp_se_extra
+  - alignment_filter_min_mapq
+  - alignment_filter_view_extra
+  - macs3_extra
+  - consensus_min_support
+
+sample_metadata:
+  file: config/samples.yml
+  schema:
+    sample_name:
+      group: optional biological replicate group for consensus peaks
+
+fastq_manifest:
+  file: config/fastq_manifest.tsv
+  columns:
+    sample: required
+    read1: required
+    read2: required_for_pe_optional_for_se
+
+generated_outputs:
+  bams:
+    - results/aligned_data/{sample}.sorted.rmdup.filtered.bam
+    - results/aligned_data/{sample}.sorted.rmdup.filtered.bam.bai
+  tracks:
+    - results/bigwig/{sample}.sorted.rmdup.filtered.CPM.bw
+  peaks:
+    - results/macs3_results/narrow/{sample}_peaks.narrowPeak
+  consensus:
+    - results/replicate_intersect/{group}_intersect.bed
+  qc:
+    - results/qc/fastp/{sample}.html
+    - results/qc/mark_duplicates/{sample}.metrics.txt
+    - results/qc/insert_size/{sample}.insert_size_metrics.txt
+    - results/qc/frip/{sample}.frip.txt
+    - results/qc/tss_enrichment/{sample}.tss_profile.png
+  reports:
+    - results/reports/multiqc_report.html
+  logs:
+    - results/logs/
