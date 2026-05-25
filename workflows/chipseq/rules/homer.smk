@@ -8,6 +8,10 @@ HOMER_ANNOTATE_EXTRA = config.get("homer_annotate_extra", "")
 HOMER_USE_SUMMIT = config_bool("homer_use_summit", HOMER_PEAK_TYPE == "narrow")
 BLACKLIST = config.get("blacklist", "")
 HOMER_MIN_PEAKS = int(config.get("homer_min_peaks", 50))
+HOMER_FEATURE_SUMMARIES = expand(
+    f"{HOMER_REPORT_DIR}/{HOMER_RESULT_TAG}/{{target}}/peak_feature_distribution.tsv",
+    target=CTX.homer_targets,
+)
 
 
 rule homer_prepare_motif_peaks:
@@ -223,4 +227,56 @@ annotatePeaks.pl \
     2> {log:q}
 
 test -s {output.annotation:q}
+        """
+
+
+rule homer_plot_annotation_distribution:
+    input:
+        annotation=rules.homer_annotate_peaks.output.annotation
+    output:
+        png=f"{HOMER_REPORT_DIR}/{HOMER_RESULT_TAG}/{{target}}/peak_feature_distribution.pie.png",
+        summary=f"{HOMER_REPORT_DIR}/{HOMER_RESULT_TAG}/{{target}}/peak_feature_distribution.tsv"
+    log:
+        PATHS.log(f"{{target}}.homer.annotation_distribution.{HOMER_RESULT_TAG}")
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output.png:q}) $(dirname {log:q})
+
+python {workflow.basedir:q}/scripts/plot_peak_feature_distribution.py \
+    --input {input.annotation:q} \
+    --output {output.png:q} \
+    --summary-tsv {output.summary:q} \
+    > {log:q} 2>&1
+
+test -s {output.png:q}
+test -s {output.summary:q}
+        """
+
+
+rule homer_plot_annotation_distribution_summary:
+    input:
+        summaries=HOMER_FEATURE_SUMMARIES
+    output:
+        table=f"{HOMER_REPORT_DIR}/{HOMER_RESULT_TAG}/peak_feature_distribution.summary.tsv",
+        png=f"{HOMER_REPORT_DIR}/{HOMER_RESULT_TAG}/peak_feature_distribution.stacked_bar.png"
+    log:
+        PATHS.log(f"homer.annotation_distribution_summary.{HOMER_RESULT_TAG}")
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output.table:q}) $(dirname {log:q})
+
+python {workflow.basedir:q}/scripts/plot_peak_feature_distribution.py \
+    --summary-inputs {input.summaries:q} \
+    --summary-tsv {output.table:q} \
+    --output {output.png:q} \
+    > {log:q} 2>&1
+
+test -s {output.table:q}
+test -s {output.png:q}
         """

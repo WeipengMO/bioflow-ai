@@ -70,6 +70,12 @@ class WorkflowPaths:
     def sorted_bai(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.bam.bai"
 
+    def alignment_filtered_bam(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.filtered.bam"
+
+    def alignment_filtered_bai(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.filtered.bam.bai"
+
     def dedup_bam(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.rmdup.bam"
 
@@ -399,11 +405,31 @@ def peak_selection_outputs(treatments, peak_mode, peak_type):
 
 
 def analysis_bam(sample):
-    return PATHS.filtered_bam(sample) if CTX.enable_post_markdup_filter else PATHS.dedup_bam(sample)
+    return PATHS.filtered_bam(sample) if CTX.enable_blacklist_filter else PATHS.dedup_bam(sample)
 
 
 def analysis_bai(sample):
-    return PATHS.filtered_bai(sample) if CTX.enable_post_markdup_filter else PATHS.dedup_bai(sample)
+    return PATHS.filtered_bai(sample) if CTX.enable_blacklist_filter else PATHS.dedup_bai(sample)
+
+
+def default_alignment_filter_view_extra():
+    return "-f 2 -F 1804" if MODE == "pe" else "-F 1796"
+
+
+def alignment_filter_view_extra(wildcards):
+    return config.get("alignment_filter_view_extra", "") or default_alignment_filter_view_extra()
+
+
+def mark_duplicates_input_bam(wildcards):
+    if CTX.enable_alignment_filter:
+        return PATHS.alignment_filtered_bam(wildcards.sample)
+    return PATHS.sorted_bam(wildcards.sample)
+
+
+def mark_duplicates_input_bai(wildcards):
+    if CTX.enable_alignment_filter:
+        return PATHS.alignment_filtered_bai(wildcards.sample)
+    return PATHS.sorted_bai(wildcards.sample)
 
 
 def load_replicate_data(samples):
@@ -473,7 +499,8 @@ def build_workflow_context(config):
     if enable_deeptools_profile and not config.get("regions_bed"):
         raise ValueError("config['regions_bed'] is required when enable_deeptools_profile is true.")
 
-    enable_post_markdup_filter = config_bool("enable_post_markdup_filter", True)
+    enable_alignment_filter = config_bool("enable_alignment_filter", True)
+    enable_blacklist_filter = config_bool("enable_blacklist_filter", True)
     blacklist = str(config.get("blacklist", "") or "")
 
     enable_chipqc = config_bool("enable_chipqc", False)
@@ -539,7 +566,8 @@ def build_workflow_context(config):
         replicate_peak_type=replicate_peak_type,
         replicate_groups=replicate_groups,
         enable_deeptools_profile=enable_deeptools_profile,
-        enable_post_markdup_filter=enable_post_markdup_filter,
+        enable_alignment_filter=enable_alignment_filter,
+        enable_blacklist_filter=enable_blacklist_filter,
         blacklist=blacklist,
         enable_chipqc=enable_chipqc,
         chipqc_peak_mode=chipqc_peak_mode,
@@ -561,7 +589,8 @@ def print_workflow_summary(ctx):
     print("Control strategy: " + ctx.control_strategy)
     print("Peak outputs: " + ";".join([f"{m}:{t}" for m in ctx.call_peak_modes for t in ctx.call_peak_types]))
     print("Replicate groups: " + (",".join(ctx.replicate_groups) if ctx.replicate_groups else "none"))
-    print("Post-MarkDuplicates filter: " + ("enabled" if ctx.enable_post_markdup_filter else "disabled"))
+    print("Pre-MarkDuplicates alignment filter: " + ("enabled" if ctx.enable_alignment_filter else "disabled"))
+    print("Post-MarkDuplicates blacklist filter: " + ("enabled" if ctx.enable_blacklist_filter else "disabled"))
     print("ChIPQC: " + ("enabled" if ctx.enable_chipqc else "disabled"))
     print("HOMER: " + ("enabled" if ctx.enable_homer else "disabled"))
 
@@ -590,6 +619,15 @@ def raw_read1(wildcards):
 
 def raw_read2(wildcards):
     return CTX.fastqs[wildcards.sample]["r2"]
+
+
+def clean_reads(wildcards):
+    if MODE == "pe":
+        return [
+            PATHS.clean_r1(wildcards.sample, MODE),
+            PATHS.clean_r2(wildcards.sample),
+        ]
+    return [PATHS.clean_r1(wildcards.sample, MODE)]
 
 
 def replicates_for_group(wildcards):
@@ -645,6 +683,20 @@ def bowtie2_reads_arg(wildcards, input):
     return f"-U {reads[0]}"
 
 
+def bowtie2_read_group_arg(wildcards):
+    sample = str(wildcards.sample)
+    return " ".join(
+        [
+            "--rg-id",
+            shlex.quote(sample),
+            "--rg",
+            shlex.quote(f"SM:{sample}"),
+            "--rg",
+            "PL:ILLUMINA",
+        ]
+    )
+
+
 def homer_raw_peak_input(wildcards):
     if CTX.homer_input_source == "replicate_intersect":
         return PATHS.replicate_consensus(wildcards.target)
@@ -656,6 +708,12 @@ def homer_outputs(targets, result_tag):
     return (
         expand(f"{report_dir}/{result_tag}/{{target}}/.motifs_complete", target=targets)
         + expand(f"{report_dir}/{result_tag}/{{target}}/annotatePeaks.txt", target=targets)
+        + expand(f"{report_dir}/{result_tag}/{{target}}/peak_feature_distribution.pie.png", target=targets)
+        + expand(f"{report_dir}/{result_tag}/{{target}}/peak_feature_distribution.tsv", target=targets)
+        + [
+            f"{report_dir}/{result_tag}/peak_feature_distribution.summary.tsv",
+            f"{report_dir}/{result_tag}/peak_feature_distribution.stacked_bar.png",
+        ]
     )
 
 

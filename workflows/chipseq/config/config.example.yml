@@ -21,7 +21,8 @@ gsize: hs  # Genome size for MACS3. Can be a number (e.g. 2.7e9) or a predefined
 picard_path: /path/to/picard.jar
 
 # Core switches
-enable_post_markdup_filter: true
+enable_alignment_filter: true
+enable_blacklist_filter: true
 enable_deeptools_profile: true
 enable_chipqc: false
 enable_homer: false
@@ -60,9 +61,9 @@ blacklist: "/data/user/mowp/db/hg38/bed/hg38-blacklist.v2.bed"
 # Tool-specific extra arguments
 fastp_extra: ""
 bowtie2_extra: "--dovetail --very-sensitive -X 1000"
+alignment_filter_min_mapq: 30
+alignment_filter_view_extra: ""  # auto: PE uses -f 2 -F 1804, SE uses -F 1796
 mark_duplicates_extra: "REMOVE_DUPLICATES=true"
-post_markdup_min_mapq: 30
-post_markdup_view_extra: ""  # auto: PE uses -f 2 -F 1804, SE uses -F 1796
 bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
 compute_matrix_extra: "scale-regions -b 1000 -a 1000 --skipZeros"
 plot_profile_extra: ""
@@ -71,8 +72,9 @@ plot_profile_extra: ""
 threads:
   fastp: 8
   bowtie2: 24
+  alignment_filter: 4
   mark_duplicates: 4
-  post_markdup_filter: 4
+  blacklist_filter: 4
   merge_control: 4
   bam_coverage: 8
   compute_matrix: 8

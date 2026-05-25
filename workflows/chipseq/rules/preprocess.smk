@@ -1,15 +1,6 @@
 ruleorder: fastp_pe > fastp_se
 
 
-def clean_reads(wildcards):
-    if MODE == "pe":
-        return [
-            PATHS.clean_r1(wildcards.sample, MODE),
-            PATHS.clean_r2(wildcards.sample),
-        ]
-    return [PATHS.clean_r1(wildcards.sample, MODE)]
-
-
 rule fastp_pe:
     input:
         r1=raw_read1,
@@ -92,6 +83,7 @@ rule align_reads:
     params:
         genome=lambda wildcards: config["genome"],
         reads_arg=bowtie2_reads_arg,
+        read_group_arg=bowtie2_read_group_arg,
         extra=lambda wildcards: config.get("bowtie2_extra", "--dovetail -X 1000" if MODE == "pe" else "")
     log:
         PATHS.log("{sample}.bowtie2")
@@ -107,6 +99,7 @@ bowtie2 \
     -t \
     -p {threads} \
     {params.extra} \
+    {params.read_group_arg} \
     -x {params.genome:q} \
     {params.reads_arg} \
     2> {log:q} \
@@ -117,13 +110,51 @@ test -s {output.bai:q}
         """
 
 
-rule mark_duplicates:
+rule filter_aligned:
     input:
         bam=PATHS.sorted_bam("{sample}"),
         bai=PATHS.sorted_bai("{sample}")
     output:
-        bam=temp(PATHS.dedup_bam("{sample}")) if CTX.enable_post_markdup_filter else PATHS.dedup_bam("{sample}"),
-        bai=temp(PATHS.dedup_bai("{sample}")) if CTX.enable_post_markdup_filter else PATHS.dedup_bai("{sample}"),
+        bam=temp(PATHS.alignment_filtered_bam("{sample}")),
+        bai=temp(PATHS.alignment_filtered_bai("{sample}"))
+    wildcard_constraints:
+        sample=SAMPLE_PATTERN
+    params:
+        min_mapq=lambda wildcards: int(config.get("alignment_filter_min_mapq", 30)),
+        view_extra=alignment_filter_view_extra
+    log:
+        PATHS.log("{sample}.alignment_filter")
+    threads:
+        workflow_threads("alignment_filter", 4)
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output.bam:q}) $(dirname {log:q})
+
+samtools view \
+    -@ {threads} \
+    -b \
+    -q {params.min_mapq} \
+    {params.view_extra} \
+    {input.bam:q} \
+    -o {output.bam:q} \
+    &> {log:q}
+
+samtools index -@ {threads} {output.bam:q} 2>> {log:q}
+test -s {output.bam:q}
+test -s {output.bai:q}
+        """
+
+
+rule mark_duplicates:
+    input:
+        bam=mark_duplicates_input_bam,
+        bai=mark_duplicates_input_bai
+    output:
+        bam=temp(PATHS.dedup_bam("{sample}")) if CTX.enable_blacklist_filter else PATHS.dedup_bam("{sample}"),
+        bai=temp(PATHS.dedup_bai("{sample}")) if CTX.enable_blacklist_filter else PATHS.dedup_bai("{sample}"),
         metrics=PATHS.mark_duplicates_metrics("{sample}")
     wildcard_constraints:
         sample=SAMPLE_PATTERN
@@ -158,7 +189,7 @@ test -s {output.metrics:q}
         """
 
 
-rule filter_post_markdup:
+rule filter_blacklist:
     input:
         bam=PATHS.dedup_bam("{sample}"),
         bai=PATHS.dedup_bai("{sample}")
@@ -168,15 +199,11 @@ rule filter_post_markdup:
     wildcard_constraints:
         sample=SAMPLE_PATTERN
     params:
-        min_mapq=lambda wildcards: int(config.get("post_markdup_min_mapq", 30)),
-        view_extra=lambda wildcards: config.get(
-            "post_markdup_view_extra"
-        ) or ("-f 2 -F 1804" if MODE == "pe" else "-F 1796"),
         blacklist=lambda wildcards: str(config.get("blacklist", "") or "")
     log:
-        PATHS.log("{sample}.post_markdup_filter")
+        PATHS.log("{sample}.blacklist_filter")
     threads:
-        workflow_threads("post_markdup_filter", 4)
+        workflow_threads("blacklist_filter", 4)
     conda:
         ENV
     shell:
@@ -184,29 +211,22 @@ rule filter_post_markdup:
 set -euo pipefail
 mkdir -p $(dirname {output.bam:q}) $(dirname {log:q})
 
-tmpbase="$(dirname {output.bam:q})/.tmp"
-mkdir -p "$tmpbase"
-tmpdir=$(mktemp -d "$tmpbase/{wildcards.sample}.XXXXXX")
-trap 'rm -rf "$tmpdir"' EXIT
-
-samtools view \
-    -@ {threads} \
-    -b \
-    -q {params.min_mapq} \
-    {params.view_extra} \
-    {input.bam:q} \
-    -o "$tmpdir/{wildcards.sample}.filtered.bam" \
-    &> {log:q}
-
 if [[ -n {params.blacklist:q} ]]; then
+    tmpbase="$(dirname {output.bam:q})/.tmp"
+    mkdir -p "$tmpbase"
+    tmpdir=$(mktemp -d "$tmpbase/{wildcards.sample}.blacklist.XXXXXX")
+    trap 'rm -rf "$tmpdir"' EXIT
+
+    samtools view -H {input.bam:q} > "$tmpdir/header.sam" 2> {log:q}
     bedtools intersect \
         -v \
-        -abam "$tmpdir/{wildcards.sample}.filtered.bam" \
+        -abam {input.bam:q} \
         -b {params.blacklist:q} \
-        > {output.bam:q} \
+        > "$tmpdir/filtered.bam" \
         2>> {log:q}
+    samtools reheader "$tmpdir/header.sam" "$tmpdir/filtered.bam" > {output.bam:q} 2>> {log:q}
 else
-    mv "$tmpdir/{wildcards.sample}.filtered.bam" {output.bam:q}
+    samtools view -@ {threads} -b {input.bam:q} -o {output.bam:q} &> {log:q}
 fi
 
 samtools index -@ {threads} {output.bam:q} 2>> {log:q}

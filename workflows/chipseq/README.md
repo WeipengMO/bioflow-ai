@@ -27,7 +27,7 @@ Reference files configured in `config/config.yml`:
 | `picard_path` | always | `picard` command or `/path/to/picard.jar` for MarkDuplicates |
 | `regions_bed` | `enable_deeptools_profile: true` | BED regions used by `computeMatrix` |
 | `homer_genome` | `enable_homer: true` | HOMER genome name such as `hg38`, or a FASTA path accepted by HOMER |
-| `blacklist` | optional blacklist filtering | BED file reused for both post-MarkDuplicates BAM filtering and HOMER peak filtering |
+| `blacklist` | optional blacklist filtering | BED file reused for final BAM filtering and HOMER peak filtering |
 
 ### Reference Files
 
@@ -300,9 +300,10 @@ fastq_manifest: config/fastq_manifest.tsv
 | `picard_path` | Picard command or JAR path |
 | `call_peak_modes` | `with_control`, `without_control`, or both |
 | `call_peak_types` | `narrow`, `broad`, or both |
-| `enable_post_markdup_filter` | Apply BAM filtering after `MarkDuplicates`; default `true` |
-| `post_markdup_min_mapq` | Minimum MAPQ passed to `samtools view -q`; default `30` |
-| `post_markdup_view_extra` | Extra arguments appended to `samtools view`; if empty, the workflow picks mode-specific defaults |
+| `enable_alignment_filter` | Apply MAPQ/flag filtering before `MarkDuplicates`; default `true` |
+| `alignment_filter_min_mapq` | Minimum MAPQ passed to `samtools view -q`; default `30` |
+| `alignment_filter_view_extra` | Extra arguments appended to pre-MarkDuplicates `samtools view`; if empty, the workflow picks mode-specific defaults |
+| `enable_blacklist_filter` | Remove blacklist overlaps after `MarkDuplicates`; default `true` |
 | `macs3_broad_cutoff` | Value passed to `--broad-cutoff` for broad peak calling |
 | `macs3_extra` | Extra arguments appended directly to `macs3 callpeak`, such as `--qvalue 0.01` |
 | `replicate_peak_mode` | Peak mode used for replicate consensus |
@@ -315,20 +316,25 @@ fastq_manifest: config/fastq_manifest.tsv
 | `enable_homer` | Run HOMER motif enrichment |
 | `homer_input_source` | `replicate_intersect` or `sample_peaks` |
 | `homer_genome` | HOMER genome name or FASTA path |
-| `blacklist` | Optional BED blacklist reused by post-MarkDuplicates filtering and HOMER |
+| `blacklist` | Optional BED blacklist reused by final BAM filtering and HOMER |
 | `homer_min_peaks` | Minimum peaks required to run HOMER; default is 50 |
 | `threads` | Per-rule thread settings |
 
 Advanced optional keys supported by the workflow but omitted from `config.example.yml`: `chipqc_annotation`, `chipqc_report_dir`, `chipqc_report_facet`, `homer_report_dir`, `homer_input_dir`, `homer_min_peaks`, and `workdir`.
 
-Default post-MarkDuplicates filtering is equivalent to:
+Default pre-MarkDuplicates alignment filtering is equivalent to:
 
 ```bash
-samtools view -q 30 -f 2 -F 1804 -b input.rmdup.bam > filtered.bam
-bedtools intersect -v -abam filtered.bam -b ${blacklist} > filtered.rmblacklist.bam
+samtools view -q 30 -f 2 -F 1804 -b input.sorted.bam > input.sorted.filtered.bam
 ```
 
 In single-end mode, the default becomes `samtools view -q 30 -F 1796 -b`, which removes unmapped, secondary, QC-fail, and duplicate reads without applying a proper-pair filter.
+
+When `enable_blacklist_filter: true`, duplicate-removed BAMs are filtered again with:
+
+```bash
+bedtools intersect -v -abam input.sorted.rmdup.bam -b ${blacklist} > input.sorted.rmdup.filtered.bam
+```
 
 ## Outputs
 
@@ -336,7 +342,7 @@ In single-end mode, the default becomes `samtools view -q 30 -F 1796 -b`, which 
 <outdir>/clean_data/                         # temporary cleaned FASTQs
 <outdir>/aligned_data/*.sorted.rmdup.bam     # duplicate-removed BAMs
 <outdir>/aligned_data/*.sorted.rmdup.bam.bai
-<outdir>/aligned_data/*.sorted.rmdup.filtered.bam   # final analysis BAMs when enable_post_markdup_filter: true
+<outdir>/aligned_data/*.sorted.rmdup.filtered.bam   # final analysis BAMs when enable_blacklist_filter: true
 <outdir>/aligned_data/*.sorted.rmdup.filtered.bam.bai
 <outdir>/qc/fastp/
 <outdir>/qc/mark_duplicates/
@@ -362,11 +368,24 @@ Execution order:
 
 2. `align_reads`
    - Runs `bowtie2` against `genome`.
+   - Adds read group tags (`ID`, `SM`, and `PL`) during alignment.
    - Sorts alignments with `samtools sort`.
   - Outputs temporary sorted BAMs under `<outdir>/aligned_data/`.
 
-3. `mark_duplicates`
+3. `filter_aligned`
+  - Runs by default before duplicate removal.
+  - Applies `samtools view` filtering with `alignment_filter_min_mapq` and `alignment_filter_view_extra`.
+  - Can be disabled with `enable_alignment_filter: false`.
+  - Outputs temporary alignment-filtered BAMs:
+
+```text
+<outdir>/aligned_data/{sample}.sorted.filtered.bam
+<outdir>/aligned_data/{sample}.sorted.filtered.bam.bai
+```
+
+4. `mark_duplicates`
    - Runs Picard `MarkDuplicates`.
+  - Uses the alignment-filtered BAM when `enable_alignment_filter: true`, otherwise uses the sorted BAM.
   - Outputs duplicate-removed BAMs and indexes:
 
 ```text
@@ -375,11 +394,10 @@ Execution order:
 <outdir>/qc/mark_duplicates/{sample}.metrics.txt
 ```
 
-4. `filter_post_markdup`
+5. `filter_blacklist`
   - Runs by default after `mark_duplicates`.
-  - Applies `samtools view` filtering with `post_markdup_min_mapq` and `post_markdup_view_extra`.
   - If `blacklist` is set, removes blacklist overlaps with `bedtools intersect -v -abam`.
-  - Can be disabled with `enable_post_markdup_filter: false`.
+  - Can be disabled with `enable_blacklist_filter: false`.
   - Outputs:
 
 ```text
@@ -387,16 +405,16 @@ Execution order:
 <outdir>/aligned_data/{sample}.sorted.rmdup.filtered.bam.bai
 ```
 
-5. `bam_coverage`
+6. `bam_coverage`
    - Runs deepTools `bamCoverage`.
-  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`, otherwise uses the duplicate-removed BAM.
+  - Uses the blacklist-filtered BAM when `enable_blacklist_filter: true`, otherwise uses the duplicate-removed BAM.
    - Outputs normalized bigWig tracks:
 
 ```text
 <outdir>/bigwig/{sample}.sorted.rmdup.CPM.bw
 ```
 
-6. `compute_matrix_profile`
+7. `compute_matrix_profile`
    - Runs only when `enable_deeptools_profile: true`.
    - Uses `regions_bed`.
    - Outputs:
@@ -405,7 +423,7 @@ Execution order:
 <outdir>/deeptools_profile/{sample}.scale.png
 ```
 
-7. `merge_pooled_control`
+8. `merge_pooled_control`
    - Runs only when control samples declare a shared `pool`.
    - Runs once for each pool name.
   - Merges the downstream analysis BAMs for control samples in that pool into:
@@ -415,18 +433,18 @@ Execution order:
 <outdir>/aligned_data/{pool_name}.sorted.rmdup.bam.bai
 ```
 
-When `enable_post_markdup_filter: true`, pooled controls are written as:
+When `enable_blacklist_filter: true`, pooled controls are written as:
 
 ```text
 <outdir>/aligned_data/{pool_name}.sorted.rmdup.filtered.bam
 <outdir>/aligned_data/{pool_name}.sorted.rmdup.filtered.bam.bai
 ```
 
-8. `macs3_callpeak`
+9. `macs3_callpeak`
    - Runs one job for each configured treatment, peak mode, and peak type.
    - With-control peaks require `matched` or `pooled` controls.
    - No-control peaks use `without_control` and run MACS3 without a `-c` control BAM.
-  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`.
+  - Uses the blacklist-filtered BAM when `enable_blacklist_filter: true`.
    - `macs3_extra` is appended directly to `macs3 callpeak` for advanced options.
    - Output directories:
 
@@ -437,7 +455,7 @@ When `enable_post_markdup_filter: true`, pooled controls are written as:
 <outdir>/macs3_results/broad_no_control/
 ```
 
-9. `replicate_intersect`
+10. `replicate_intersect`
    - Uses treatment samples that share the same `group`.
    - Intersects replicate peak files with `bedtools multiinter`.
    - Runs only for groups with at least two treatment samples.
@@ -448,7 +466,7 @@ When `enable_post_markdup_filter: true`, pooled controls are written as:
 <outdir>/replicate_intersect/{group}_intersect.bed
 ```
 
-10. `generate_chipqc_sample_sheet`
+11. `generate_chipqc_sample_sheet`
    - Runs only when `enable_chipqc: true` and `chipqc_sample_sheet` is empty.
    - Derives the sheet from `samples`, control mapping, replicate groups, and selected peak files.
    - Generates:
@@ -457,10 +475,10 @@ When `enable_post_markdup_filter: true`, pooled controls are written as:
 <outdir>/reports/chipqc/chipqc_sample_sheet.generated.tsv
 ```
 
-11. `chipqc_report`
+12. `chipqc_report`
     - Runs only when `enable_chipqc: true`.
     - Uses treatment BAMs, control BAMs if configured, selected MACS3 peak files, and the ChIPQC sample sheet.
-  - Uses the post-MarkDuplicates filtered BAM when `enable_post_markdup_filter: true`.
+  - Uses the blacklist-filtered BAM when `enable_blacklist_filter: true`.
     - Outputs the ChIPQC report directory and completion marker:
 
 ```text
@@ -497,6 +515,17 @@ When `enable_post_markdup_filter: true`, pooled controls are written as:
     - Independent from `homer_find_motifs`; it does not wait for motif discovery outputs.
     - Always passes `-gtf {gtf}` from `config/config.yml`.
     - Writes `<outdir>/reports/homer/.../{target}/annotatePeaks.txt`.
+
+16. `homer_plot_annotation_distribution`
+    - Reads `annotatePeaks.txt` and collapses HOMER annotations into major feature classes.
+    - Writes a pie chart for promoter, exon, intron, intergenic, TTS, and other categories.
+    - Writes `<outdir>/reports/homer/.../{target}/peak_feature_distribution.pie.png`.
+    - Also writes `<outdir>/reports/homer/.../{target}/peak_feature_distribution.tsv` with counts and fractions.
+
+17. `homer_plot_annotation_distribution_summary`
+    - Collects all per-target `peak_feature_distribution.tsv` files into one table.
+    - Writes `<outdir>/reports/homer/.../peak_feature_distribution.summary.tsv`.
+    - Writes `<outdir>/reports/homer/.../peak_feature_distribution.stacked_bar.png` with figure height scaled to the number of targets.
 
 ## Quick Start
 
