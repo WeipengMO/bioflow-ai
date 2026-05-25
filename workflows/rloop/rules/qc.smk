@@ -42,7 +42,7 @@ rule frip_score:
     input:
         bam=PATHS.filtered_bam("{sample}"),
         bai=PATHS.filtered_bai("{sample}"),
-        peaks=PATHS.final_peak("{sample}")
+        peaks=lambda wildcards: PATHS.final_peak(wildcards.sample)
     output:
         PATHS.frip("{sample}")
     wildcard_constraints:
@@ -58,7 +58,12 @@ rule frip_score:
 set -euo pipefail
 mkdir -p $(dirname {output:q}) $(dirname {log:q})
 total=$(samtools view -@ {threads} -c {input.bam:q} 2> {log:q})
-in_peaks=$(bedtools intersect -u -abam {input.bam:q} -b {input.peaks:q} 2>> {log:q} | samtools view -@ {threads} -c - 2>> {log:q})
+if [[ -s {input.peaks:q} ]]; then
+    in_peaks=$(bedtools intersect -u -abam {input.bam:q} -b {input.peaks:q} 2>> {log:q} | samtools view -@ {threads} -c - 2>> {log:q})
+else
+    in_peaks=0
+    echo "Peak file is empty; FRiP alignments_in_peaks set to 0: {input.peaks}" >> {log:q}
+fi
 awk -v sample="{wildcards.sample}" -v total="$total" -v in_peaks="$in_peaks" 'BEGIN{{
     frip = total > 0 ? in_peaks / total : 0
     print "sample\ttotal_alignments\talignments_in_peaks\tfrip"
