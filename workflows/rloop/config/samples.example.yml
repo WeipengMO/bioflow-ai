@@ -1,0 +1,44 @@
+# BioFlowAI R-loop profiling sample metadata.
+#
+# Each FASTQ sample is listed once.
+# role is one of: treatment, control, rnaseh_control.
+# group names biological treatment replicates for consensus peaks.
+# control points from a treatment to a MACS3 background control.
+# rnaseh_control points from a treatment to an RNase H-treated specificity control.
+
+WT_DRIP_rep1:
+  role: treatment
+  group: WT_DRIP
+  control: WT_Input_rep1
+  rnaseh_control: WT_RNaseH_rep1
+WT_DRIP_rep2:
+  role: treatment
+  group: WT_DRIP
+  control: WT_Input_rep2
+  rnaseh_control: WT_RNaseH_rep2
+WT_Input_rep1:
+  role: control
+WT_Input_rep2:
+  role: control
+WT_RNaseH_rep1:
+  role: rnaseh_control
+WT_RNaseH_rep2:
+  role: rnaseh_control
+KO_DRIP_rep1:
+  role: treatment
+  group: KO_DRIP
+  control: KO_Input_rep1
+  rnaseh_control: KO_RNaseH_rep1
+KO_DRIP_rep2:
+  role: treatment
+  group: KO_DRIP
+  control: KO_Input_rep2
+  rnaseh_control: KO_RNaseH_rep2
+KO_Input_rep1:
+  role: control
+KO_Input_rep2:
+  role: control
+KO_RNaseH_rep1:
+  role: rnaseh_control
+KO_RNaseH_rep2:
+  role: rnaseh_control
