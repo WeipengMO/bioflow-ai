@@ -6,7 +6,7 @@ rule macs3_callpeak:
     output:
         PATHS.peak("{sample}")
     wildcard_constraints:
-        sample=PEAK_SAMPLE_PATTERN
+        sample=SAMPLE_PATTERN
     params:
         outdir=lambda wildcards: f"{PATHS.macs3_results}/{CTX.peak_type}",
         name=lambda wildcards: wildcards.sample,
@@ -45,7 +45,7 @@ if ENABLE_RNASEH_SUBTRACTION:
         output:
             PATHS.rnaseh_sensitive_peak("{sample}")
         wildcard_constraints:
-            sample=TREATMENT_WITH_RNASEH_PATTERN
+            sample=TREATMENT_PATTERN
         params:
             blacklist=lambda wildcards: str(config.get("blacklist", "") or "")
         log:
