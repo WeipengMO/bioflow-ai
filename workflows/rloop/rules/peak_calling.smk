@@ -85,7 +85,7 @@ else
     cp "$tmpdir/rnaseh_sensitive.bed" {output:q}
 fi
 
-test -s {output:q}
+test -e {output:q}
             """
 
 
@@ -126,7 +126,6 @@ trap 'rm -rf "$tmpdir"' EXIT
             | sort -k1,1 -k2,2n \
             | bedtools merge -i - \
             > "$tmpdir/rep_${{i}}.bed"
-        test -s "$tmpdir/rep_${{i}}.bed"
     done
 
     nrep="$i"
@@ -140,13 +139,20 @@ trap 'rm -rf "$tmpdir"' EXIT
         | bedtools merge -i - \
         | awk 'BEGIN{{OFS="\t"}} {{print $1, $2, $3, "candidate_"NR}}' \
         > "$tmpdir/candidates.bed"
-    test -s "$tmpdir/candidates.bed"
+
+    if [[ ! -s "$tmpdir/candidates.bed" ]]; then
+        : > {output:q}
+        echo "No candidate peaks remained after replicate peak cleanup."
+        exit 0
+    fi
 
     : > "$tmpdir/support_ids.txt"
     for rep in "$tmpdir"/rep_*.bed; do
-        bedtools intersect -u -a "$tmpdir/candidates.bed" -b "$rep" \
-            | cut -f4 \
-            >> "$tmpdir/support_ids.txt"
+        if [[ -s "$rep" ]]; then
+            bedtools intersect -u -a "$tmpdir/candidates.bed" -b "$rep" \
+                | cut -f4 \
+                >> "$tmpdir/support_ids.txt"
+        fi
     done
 
     awk 'BEGIN{{OFS="\t"}} {{support[$1]++}} END{{for (id in support) print id, support[id]}}' \
@@ -161,7 +167,6 @@ trap 'rm -rf "$tmpdir"' EXIT
         }}' "$tmpdir/support.tsv" "$tmpdir/candidates.bed" \
         > {output:q}
 
-    test -s {output:q}
     echo "Candidate peak universe:"
     wc -l "$tmpdir/candidates.bed"
     echo "Consensus peaks:"
