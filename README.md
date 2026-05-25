@@ -15,7 +15,7 @@ BioFlowAI aims to provide:
 - reproducible environments and config-driven execution
 - standardized inputs, outputs, logs, and reports
 - documentation that is easy for humans and AI agents to understand
-- a foundation for future agent-assisted workflow execution and debugging
+- a foundation for agent-assisted workflow execution and debugging
 
 ---
 
@@ -53,16 +53,12 @@ Each workflow should live under `workflows/<workflow_name>/` and include its own
 
 ## Workflow Design
 
-Each workflow should be designed as a self-contained project template.
-
-### 1. Self-contained workflow directory
-
-A workflow should be runnable and deployable from its own directory.
+Each workflow should be designed as a self-contained project template. A workflow should be runnable and deployable from its own directory.
 
 Recommended contents:
 
 - `README.md`: workflow overview, required inputs, expected outputs, and run examples
-- `Snakefile`
+- `Snakefile`: the main Snakemake file that defines the workflow logic and includes modular rule files
 - `config/`: example config files and project-specific metadata templates
 - `rules/`: modular Snakemake rule files grouped by function
 - `envs/`: Conda environment definitions used by the workflow
@@ -128,7 +124,7 @@ Requirements:
 
 ## Agent-Ready Design
 
-BioFlowAI is designed so that future AI agents can inspect, run, debug, and refactor workflows safely.
+BioFlowAI is designed so that AI agents can inspect, run, debug, and refactor workflows safely.
 
 Each workflow should provide an `agent/` directory containing structured metadata.
 
