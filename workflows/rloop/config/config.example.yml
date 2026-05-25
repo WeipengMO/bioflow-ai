@@ -1,0 +1,68 @@
+# BioFlowAI R-loop profiling workflow configuration.
+# Copy this file to config/config.yml before running.
+
+assay: DRIP-seq
+mode: pe  # pe or se
+outdir: results
+
+sample_config: config/samples.yml
+raw_data_dir: raw_data
+
+# Optional explicit FASTQ manifest. Leave empty to auto-discover FASTQs from raw_data_dir.
+fastq_manifest: ""
+
+# Reference files. Keep all genome resources on the same assembly.
+genome: /path/to/bowtie2/index/prefix
+gsize: hs  # Genome size for MACS3. Can be a number (e.g. 2.7e9) or a predefined code (hs, mm, etc.)
+blacklist: /path/to/ENCODE_blacklist.bed
+
+# Chromosome names removed before duplicate marking. Set [] to disable mitochondrial filtering.
+mitochondrial_chromosomes:
+  - chrM
+  - MT
+
+# Software dependency paths
+picard_path: picard
+
+# Core switches
+peak_type: broad  # broad or narrow; broad is recommended for DRIP-seq domains.
+enable_rnaseh_subtraction: true
+enable_insert_size_qc: true
+enable_multiqc: true
+
+# Tool-specific extra arguments
+fastp_extra: ""
+fastp_pe_extra: "--detect_adapter_for_pe"
+fastp_se_extra: ""
+bowtie2_extra: "--very-sensitive"
+mark_duplicates_extra: "REMOVE_DUPLICATES=true"
+alignment_filter_min_mapq: 30
+alignment_filter_view_extra: ""  # auto: PE uses -F 3852, SE uses -F 3844
+bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
+
+# MACS3 defaults are chosen from peak_type and mode.
+# broad:  --broad --broad-cutoff 0.1 --keep-dup all -q 0.05
+# narrow: --keep-dup all -q 0.01
+macs3_extra: ""
+
+# Union-style replicate consensus peaks.
+consensus_min_support: 2
+
+# Optional report customization
+insert_size_extra: ""
+multiqc_extra: ""
+
+# Per-rule threads
+threads:
+  fastp: 8
+  bowtie2: 24
+  alignment_filter: 4
+  mark_duplicates: 4
+  blacklist_filter: 4
+  bam_coverage: 8
+  macs3: 1
+  rnaseh_subtract: 2
+  replicate_consensus: 2
+  insert_size: 2
+  frip: 4
+  multiqc: 2
