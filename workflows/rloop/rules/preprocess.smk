@@ -155,9 +155,10 @@ samtools view \
     -o "$tmpdir/{wildcards.sample}.mapq.bam" \
     &> {log:q}
 
-if [[ -n {params.mito_chromosomes:q} ]]; then
+mito_chromosomes={params.mito_chromosomes:q}
+if [[ -n "$mito_chromosomes" ]]; then
     samtools view -@ {threads} -h "$tmpdir/{wildcards.sample}.mapq.bam" \
-        | awk -v mito={params.mito_chromosomes:q} 'BEGIN{{
+        | awk -v mito="$mito_chromosomes" 'BEGIN{{
         split(mito, names, ",")
         for (i in names) skip[names[i]] = 1
     }}
@@ -239,14 +240,15 @@ rule filter_blacklist:
 set -euo pipefail
 mkdir -p $(dirname {output.bam:q}) $(dirname {log:q})
 
-if [[ -n {params.blacklist:q} ]]; then
+blacklist={params.blacklist:q}
+if [[ -n "$blacklist" ]]; then
     tmpbase="$(dirname {output.bam:q})/.tmp"
     mkdir -p "$tmpbase"
     tmpdir=$(mktemp -d "$tmpbase/{wildcards.sample}.blacklist.XXXXXX")
     trap 'rm -rf "$tmpdir"' EXIT
 
     samtools view -H {input.bam:q} > "$tmpdir/header.sam" 2> {log:q}
-    bedtools intersect -v -abam {input.bam:q} -b {params.blacklist:q} > "$tmpdir/filtered.bam" 2>> {log:q}
+    bedtools intersect -v -abam {input.bam:q} -b "$blacklist" > "$tmpdir/filtered.bam" 2>> {log:q}
     samtools reheader "$tmpdir/header.sam" "$tmpdir/filtered.bam" > {output.bam:q} 2>> {log:q}
 else
     samtools view -@ {threads} -b {input.bam:q} -o {output.bam:q} &> {log:q}
