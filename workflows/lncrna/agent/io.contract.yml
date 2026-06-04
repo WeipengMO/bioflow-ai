@@ -1,0 +1,33 @@
+inputs:
+  sample_sheet:
+    path: config/samples.tsv
+    format: tsv
+    required_columns:
+      sample: Unique sample name.
+      fq1: Path to R1 FASTQ or single-end FASTQ.
+      fq2: Path to R2 FASTQ. Empty value means single-end sample.
+    optional_columns:
+      group: Group or condition for downstream differential expression analysis.
+      replicate: Replicate ID for distinguishing biological replicates.
+  reference:
+    genome_fasta: config.genome.fasta
+    genome_gtf: config.genome.gtf
+    star_index: config.genome.star_index
+
+final_outputs:
+  candidate_gtf: results/lncrna/candidate_lncRNA.gtf
+  candidate_fasta: results/lncrna/candidate_lncRNA.fa
+  candidate_summary: results/lncrna/candidate_lncRNA.summary.tsv
+  high_confidence_gtf: results/lncrna/high_confidence_lncRNA.gtf
+  high_confidence_fasta: results/lncrna/high_confidence_lncRNA.fa
+  high_confidence_summary: results/lncrna/high_confidence_lncRNA.summary.tsv
+  orf_metrics: results/lncrna/coding_filter/orf_metrics.tsv
+  gene_raw_counts: results/matrix/gene_counts.tsv
+  gene_fpkm: results/matrix/gene_fpkm.tsv
+  gene_tpm: results/matrix/gene_tpm.tsv
+  lncrna_raw_counts: results/matrix/lncrna_counts.tsv
+  lncrna_fpkm: results/matrix/lncrna_fpkm.tsv
+  lncrna_tpm: results/matrix/lncrna_tpm.tsv
+  bigwig_dir: results/bigwig/
+  bam_dir: results/bam/
+  multiqc: results/report/multiqc_report.html

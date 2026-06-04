@@ -1,0 +1,15 @@
+name: lncrna_discovery
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python >=3.10
+  - pandas
+  - numpy
+  - pyyaml
+  - stringtie
+  - gffcompare
+  - gffread
+  - subread
+  - samtools
+  - multiqc

@@ -1,0 +1,78 @@
+workflow:
+  name: lncrna_discovery
+  description: lncRNA discovery workflow from FASTQ files to candidate lncRNA annotation, FASTA, count, FPKM, TPM matrices, sorted BAM files, and bigWig tracks.
+  status: development
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  sample_sheet: config/samples.example.tsv
+
+commands:
+  deploy_project: ./scripts/deploy_pipeline.sh /path/to/lncrna_project
+  validate_samples: python scripts/validate_samples.py --samples config/samples.tsv
+  dry_run: snakemake -np --use-conda
+  run: snakemake --use-conda -j 16
+  unlock: snakemake --unlock
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.tsv
+    required_columns:
+      - sample
+      - fq1
+      - fq2
+    optional_columns:
+      - group
+      - replicate
+  reference:
+    required_config_keys:
+      - genome.fasta
+      - genome.gtf
+      - genome.star_index
+
+outputs:
+  lncrna_annotation:
+    - results/lncrna/candidate_lncRNA.gtf
+    - results/lncrna/candidate_lncRNA.fa
+    - results/lncrna/candidate_lncRNA.summary.tsv
+    - results/lncrna/high_confidence_lncRNA.gtf
+    - results/lncrna/high_confidence_lncRNA.fa
+    - results/lncrna/high_confidence_lncRNA.summary.tsv
+    - results/lncrna/coding_filter/orf_metrics.tsv
+  matrices:
+    - results/matrix/gene_counts.tsv
+    - results/matrix/gene_fpkm.tsv
+    - results/matrix/gene_tpm.tsv
+    - results/matrix/gene_length.tsv
+    - results/matrix/lncrna_counts.tsv
+    - results/matrix/lncrna_fpkm.tsv
+    - results/matrix/lncrna_tpm.tsv
+    - results/matrix/lncrna_length.tsv
+  assembly:
+    path: results/assembly/
+  gffcompare:
+    path: results/gffcompare/
+  bam:
+    path: results/bam/
+  bigwig:
+    path: results/bigwig/
+  qc:
+    path: results/qc/
+  report:
+    path: results/report/multiqc_report.html
+  logs:
+    path: results/logs/
+
+safety:
+  user_owned:
+    - raw_data/
+    - config/config.yml
+    - config/samples.tsv
+  safe_to_regenerate:
+    - results/
+    - benchmark/
+    - .snakemake/

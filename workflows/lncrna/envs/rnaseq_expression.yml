@@ -1,0 +1,17 @@
+name: rnaseq_expression
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python >=3.10
+  - pandas
+  - numpy
+  - pyyaml
+  - click
+  - fastqc
+  - fastp
+  - star
+  - samtools
+  - subread
+  - deeptools
+  - multiqc

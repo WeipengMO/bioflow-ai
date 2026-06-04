@@ -1,0 +1,70 @@
+project: lncrna_discovery
+outdir: results
+samples: config/samples.tsv
+
+genome:
+  name: hg38
+  fasta: /path/to/hg38.fa
+  gtf: /path/to/gene.gtf
+  star_index: /path/to/star_index
+
+# unstranded / forward / reverse
+# featureCounts: unstranded=-s 0, forward=-s 1, reverse=-s 2
+strandness: unstranded
+
+fastp:
+  enabled: true
+  threads: 8
+  qualified_quality_phred: 20
+  length_required: 30
+  extra: ""
+
+star:
+  threads: 24
+  extra: ""
+
+stringtie:
+  threads: 8
+  # Common lncRNA discovery practice: keep reference-guided assembly, then merge.
+  assemble_extra: ""
+  merge_extra: ""
+
+lncrna_filter:
+  min_length: 200
+  min_exons: 2
+  # gffcompare class codes commonly retained for candidate lncRNAs:
+  # u=intergenic, i=intron, x=antisense, o=generic exonic overlap, e=single-exon transfrag overlap
+  class_codes:
+    - u
+    - i
+    - x
+    - o
+    - e
+
+coding_filter:
+  # Retain transcripts whose longest six-frame ORF is no longer than this cutoff.
+  # 100 aa is a common conservative cutoff used in lncRNA discovery workflows.
+  max_orf_aa: 100
+  # Optional newline-delimited transcript IDs to remove after external tools
+  # such as CPAT/CPC2/PLEK/Pfam-HMMER identify them as protein-coding.
+  exclude_transcripts: ""
+
+featurecounts:
+  threads: 8
+  feature_type: exon
+  attribute_type: gene_id
+  paired_extra: "-p -B -C"
+  single_extra: ""
+  extra: ""
+
+bigwig:
+  enabled: true
+  threads: 8
+  bin_size: 10
+  normalize_using: CPM
+  effective_genome_size: null
+  extend_reads: false
+  extra: ""
+
+multiqc:
+  enabled: true
