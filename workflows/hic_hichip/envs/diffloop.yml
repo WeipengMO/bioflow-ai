@@ -1,0 +1,12 @@
+name: bioflow-hic-hichip-diffloop
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base>=4.2
+  - r-optparse
+  - r-ggplot2
+  - r-pheatmap
+  - r-data.table
+  - bioconductor-deseq2
+  - bioconductor-edger

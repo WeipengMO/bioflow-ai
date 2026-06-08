@@ -1,0 +1,66 @@
+required_inputs:
+  config/config.yml:
+    description: Main workflow configuration.
+  samples.tsv:
+    columns:
+      - sample
+      - fq1
+      - fq2
+      - assay
+      - condition
+      - replicate
+      - group
+  HiC-Pro Singularity image:
+    default: /home/mowp/software/HiC-Pro/hicpro3.sif
+  reference_files:
+    - genome fasta
+    - chrom sizes
+    - bowtie2 index prefix
+    - restriction fragment BED
+
+optional_inputs:
+  comparisons.tsv:
+    description: Required only for differential loop analysis.
+  peak_bed:
+    description: Recommended for HiChIP FitHiChIP loop calling.
+  promoters_bed:
+    description: Optional loop-to-gene annotation.
+  enhancers_bed:
+    description: Optional enhancer-promoter loop annotation.
+
+final_outputs:
+  valid_pairs: results/valid_pairs/{sample}.allValidPairs
+  mcool: results/cool/{sample}.mcool
+  loops: results/loops/{sample}/{sample}.loops.bedpe
+  loop_universe: results/loops/consensus/loop_universe.bedpe
+  loop_counts: results/diffloop/counts/loop_counts.tsv
+  diffloops: results/diffloop/{comparison}/diffloops.tsv
+  report: results/reports/hic_hichip_report.html
+
+intermediate_outputs:
+  clean_fastq: results/clean_data/
+  hicpro_input: results/hicpro_input/
+  hicpro_raw_output: results/hicpro/
+  sparse_matrices: results/matrix/
+
+safety_boundaries:
+  never_modify:
+    - raw FASTQ files
+    - reference files
+    - external peak files
+  can_delete_and_regenerate:
+    - results/logs
+    - results/benchmarks
+    - results/qc
+    - results/loops
+    - results/diffloop
+
+expected_failure_modes:
+  missing_hicpro_container:
+    message: Check hicpro.container in config/config.yml.
+  missing_reference:
+    message: Check genome.fasta, chrom_sizes, bowtie2_index, and restriction_fragments.
+  missing_loop_caller:
+    message: Install FitHiChIP/mustache/cooltools or provide loop_calling.precomputed_loops.
+  no_replicates_for_diffloop:
+    message: DESeq2 cannot estimate dispersion; descriptive fold-change will be written.

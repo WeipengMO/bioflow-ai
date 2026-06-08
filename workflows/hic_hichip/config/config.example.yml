@@ -1,0 +1,83 @@
+# BioFlowAI Hi-C / HiChIP example configuration.
+# Copy this file to config/config.yml and edit paths before running real data.
+
+workdir: "."
+outdir: "results"
+raw_data_dir: "config/test_data"
+samples: "config/samples.example.tsv"
+comparisons: "config/comparisons.example.tsv"
+validate_input_files: false
+
+assay: "hichip"
+
+genome:
+  assembly: "hg38"
+  fasta: "/path/to/hg38.fa"
+  chrom_sizes: "/path/to/hg38.chrom.sizes"
+  bowtie2_index: "/path/to/bowtie2/hg38"
+  restriction_fragments: "/path/to/hg38_MboI_resfrag.bed"
+  blacklist: ""
+
+preprocessing:
+  enable_fastp: false
+  fastp_extra: "--detect_adapter_for_pe"
+
+hicpro:
+  container: "/home/mowp/software/HiC-Pro/hicpro3.sif"
+  config_template: "config/hicpro.config.template"
+  resolutions: [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+  ligation_site: "GATCGATC"
+  restriction_enzyme: "MboI"
+  min_mapq: 30
+  remove_duplicates: true
+  ice_norm: true
+  singularity_args: ""
+  extra_bind_paths: []
+  extra: ""
+
+matrix:
+  balance: true
+
+loop_calling:
+  enable: true
+  # hichip: fithichip is preferred when FitHiChIP is installed.
+  # hic: mustache or cooltools are usually easier than GPU-dependent HiCCUPS.
+  caller: "fithichip"
+  resolution: 10000
+  fdr: 0.01
+  min_dist: 20000
+  max_dist: 2000000
+  peak_mode: "external_peak"
+  external_peaks: ""
+  fithichip_script: "FitHiChIP_HiCPro.sh"
+  mustache_bin: "mustache"
+  cooltools_bin: "cooltools"
+
+qc:
+  enable_multiqc: true
+  enable_distance_decay: true
+  enable_cis_trans: true
+  enable_correlation: true
+
+annotation:
+  enable: false
+  promoters: ""
+  enhancers: ""
+  gtf: ""
+
+diffloop:
+  enable: true
+  method: "deseq2"
+  quantification_source: "cool"   # cool or validpairs
+  loop_universe: "union"          # union, intersection, group_consensus
+  anchor_slop: 0
+  min_count: 10
+  fdr: 0.05
+  lfc_cutoff: 0.0
+
+threads:
+  fastp: 8
+  hicpro: 32
+  matrix_convert: 4
+  loop_calling: 16
+  diffloop: 8

@@ -1,0 +1,41 @@
+configfile:
+    "config/config.yml"
+
+workdir:
+    config.get("workdir", ".")
+
+include:
+    "rules/common.smk"
+
+CTX = build_workflow_context(config)
+print_workflow_summary(CTX)
+
+OUTDIR = PATHS.outdir
+ENV = "envs/hic_hichip.yml"
+LOOP_ENV = "envs/loops.yml"
+DIFF_ENV = "envs/diffloop.yml"
+
+include:
+    "rules/preprocess.smk"
+
+include:
+    "rules/hicpro.smk"
+
+include:
+    "rules/matrix.smk"
+
+include:
+    "rules/qc.smk"
+
+include:
+    "rules/loops.smk"
+
+include:
+    "rules/diffloop.smk"
+
+include:
+    "rules/report.smk"
+
+rule all:
+    input:
+        all_outputs(CTX)

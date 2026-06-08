@@ -1,0 +1,68 @@
+workflow:
+  name: hic_hichip
+  description: Complete Hi-C / HiChIP workflow from FASTQ preprocessing and HiC-Pro processing to loop calling and differential loop analysis.
+  status: development
+  assays:
+    - Hi-C
+    - HiChIP
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  active_config: config/config.yml
+
+commands:
+  dry_run: ./run_snakemake.sh dry-run 8
+  run: ./run_snakemake.sh run 32
+  unlock: ./run_snakemake.sh unlock
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.tsv or config/samples.example.tsv
+    required: true
+  comparisons:
+    path: config/comparisons.tsv or config/comparisons.example.tsv
+    required: false
+  raw_fastq:
+    required: true
+  reference:
+    required:
+      - genome.fasta
+      - chrom.sizes
+      - bowtie2 index
+      - HiC-Pro restriction fragment BED
+  hicpro_container:
+    default: /home/mowp/software/HiC-Pro/hicpro3.sif
+    required: true
+
+outputs:
+  valid_pairs: results/valid_pairs/
+  matrices: results/matrix/
+  coolers: results/cool/
+  loops: results/loops/
+  diffloops: results/diffloop/
+  qc: results/qc/
+  reports: results/reports/
+  logs: results/logs/
+
+safety:
+  user_owned:
+    - raw FASTQ files
+    - reference genome files
+    - config files
+    - sample metadata
+    - comparison metadata
+    - external peak files
+  safe_to_regenerate:
+    - results/
+    - logs/
+    - benchmarks/
+    - reports/
+
+notes:
+  - HiC-Pro is executed through Singularity; do not install HiC-Pro with conda.
+  - Differential loops require biological replicates for formal statistical testing.
+  - HiChIP loop interpretation depends on target: H3K27ac/RNAPII loops differ from CTCF/RAD21 loops.

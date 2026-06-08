@@ -1,0 +1,16 @@
+name: bioflow-hic-hichip-loops
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  - pandas
+  - pyyaml
+  - numpy
+  - scipy
+  - cooler
+  - cooltools
+  - bedtools
+  - pip
+  - pip:
+      - mustache-hic

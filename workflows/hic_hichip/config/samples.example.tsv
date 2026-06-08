@@ -1,0 +1,5 @@
+sample	fq1	fq2	assay	condition	replicate	group	target	peak_bed	control_bam
+CTRL_rep1	CTRL_rep1_R1.fq.gz	CTRL_rep1_R2.fq.gz	hichip	CTRL	1	CTRL	H3K27ac		
+CTRL_rep2	CTRL_rep2_R1.fq.gz	CTRL_rep2_R2.fq.gz	hichip	CTRL	2	CTRL	H3K27ac		
+TRT_rep1	TRT_rep1_R1.fq.gz	TRT_rep1_R2.fq.gz	hichip	TRT	1	TRT	H3K27ac		
+TRT_rep2	TRT_rep2_R1.fq.gz	TRT_rep2_R2.fq.gz	hichip	TRT	2	TRT	H3K27ac		
