@@ -1,32 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SNAKEMAKE_RUNTIME_CONFIG="${SNAKEMAKE_RUNTIME_CONFIG:-$SCRIPT_DIR/config/run_snakemake.env}"
 
-MODE="${1:-dry-run}"
-CORES="${2:-8}"
-SNAKEFILE="Snakefile"
+if [[ -f "$SNAKEMAKE_RUNTIME_CONFIG" ]]; then
+    # shellcheck disable=SC1090
+    source "$SNAKEMAKE_RUNTIME_CONFIG"
+fi
 
-case "$MODE" in
-  dry-run|dryrun|np)
-    snakemake -s "$SNAKEFILE" -np --cores "$CORES"
-    ;;
-  run)
-    snakemake -s "$SNAKEFILE" --use-conda --cores "$CORES" --rerun-incomplete --printshellcmds
-    ;;
-  run-singularity)
-    # HiC-Pro itself is run through the configured Singularity image.
-    # This flag is only for rules that declare Snakemake containers in future extensions.
-    snakemake -s "$SNAKEFILE" --use-conda --use-singularity --cores "$CORES" --rerun-incomplete --printshellcmds
-    ;;
-  unlock)
-    snakemake -s "$SNAKEFILE" --unlock
-    ;;
-  clean-metadata)
-    snakemake -s "$SNAKEFILE" --cleanup-metadata results || true
-    ;;
-  *)
-    echo "Usage: $0 {dry-run|run|run-singularity|unlock|clean-metadata} [cores]" >&2
-    exit 2
-    ;;
-esac
+SNAKEFILE="${SNAKEFILE:-$SCRIPT_DIR/Snakefile}"
+: "${SNAKEMAKE_CORES:?Set SNAKEMAKE_CORES in config/run_snakemake.env or the environment.}"
+: "${SNAKEMAKE_CONDA_PREFIX:?Set SNAKEMAKE_CONDA_PREFIX in config/run_snakemake.env or the environment.}"
+SNAKEMAKE_CACHE_DIR="${SNAKEMAKE_CACHE_DIR:-$SCRIPT_DIR/.snakemake/cache}"
+SNAKEMAKE_TMPDIR="${SNAKEMAKE_TMPDIR:-$SNAKEMAKE_CACHE_DIR/tmp}"
+
+mkdir -p "$SNAKEMAKE_CONDA_PREFIX/pkgs" "$SNAKEMAKE_CACHE_DIR" "$SNAKEMAKE_TMPDIR"
+
+export XDG_CACHE_HOME="$SNAKEMAKE_CACHE_DIR"
+export TMPDIR="$SNAKEMAKE_TMPDIR"
+export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-$SNAKEMAKE_CONDA_PREFIX/pkgs}"
+
+if [[ -n "${SNAKEMAKE_PROXY:-}" ]]; then
+    export http_proxy="${http_proxy:-$SNAKEMAKE_PROXY}"
+    export https_proxy="${https_proxy:-$SNAKEMAKE_PROXY}"
+fi
+
+if [[ -n "${FITHICHIP_HOME:-}" && -z "${FITHICHIP_SCRIPT:-}" ]]; then
+    export FITHICHIP_SCRIPT="$FITHICHIP_HOME/FitHiChIP_HiCPro.sh"
+fi
+
+snakemake \
+    -s "$SNAKEFILE" \
+    --use-conda \
+    --conda-prefix "$SNAKEMAKE_CONDA_PREFIX" \
+    -j "$SNAKEMAKE_CORES" \
+    --rerun-triggers mtime \
+    "$@"

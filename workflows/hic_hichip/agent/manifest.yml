@@ -12,9 +12,11 @@ entrypoint:
   active_config: config/config.yml
 
 commands:
-  dry_run: ./run_snakemake.sh dry-run 8
-  run: ./run_snakemake.sh run 32
-  unlock: ./run_snakemake.sh unlock
+  deploy: scripts/deploy_pipeline.sh /path/to/project_hichip
+  dry_run: ./run_snakemake.sh -n --cores 1
+  run: ./run_snakemake.sh --cores 32 --rerun-incomplete --printshellcmds
+  unlock: ./run_snakemake.sh --unlock
+  install_fithichip: ./scripts/install_fithichip.sh --prefix tools/FitHiChIP
 
 inputs:
   config:
@@ -37,6 +39,10 @@ inputs:
   hicpro_container:
     default: /home/mowp/software/HiC-Pro/hicpro3.sif
     required: true
+  fithichip:
+    required: false
+    installer: scripts/install_fithichip.sh
+    env_config: config/run_snakemake.env
 
 outputs:
   valid_pairs: results/valid_pairs/
@@ -64,5 +70,6 @@ safety:
 
 notes:
   - HiC-Pro is executed through Singularity; do not install HiC-Pro with conda.
+  - FitHiChIP source is installed with scripts/install_fithichip.sh and should be configured through FITHICHIP_SCRIPT or loop_calling.fithichip_script.
   - Differential loops require biological replicates for formal statistical testing.
   - HiChIP loop interpretation depends on target: H3K27ac/RNAPII loops differ from CTCF/RAD21 loops.

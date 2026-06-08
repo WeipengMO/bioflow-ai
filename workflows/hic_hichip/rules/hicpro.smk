@@ -5,7 +5,7 @@ rule make_hicpro_config:
     output:
         PATHS.hicpro_generated_config
     params:
-        config_yml="config/config.yml"
+        config_yml=lambda wildcards: config.get("config_yml", "config/config.yml")
     log:
         PATHS.log("hicpro/make_hicpro_config")
     conda:
@@ -35,7 +35,9 @@ rule run_hicpro:
         container=lambda wildcards: CTX.hicpro_container,
         bind_paths=lambda wildcards: ",".join(CTX.hicpro_bind_paths),
         singularity_args=lambda wildcards: CTX.hicpro_singularity_args,
-        extra=lambda wildcards: (config.get("hicpro", {}) or {}).get("extra", "")
+        extra=lambda wildcards: (config.get("hicpro", {}) or {}).get("extra", ""),
+        benchmark_dir=PATHS.benchmarks,
+        hic_results_data=f"{PATHS.hicpro}/hic_results/data"
     log:
         PATHS.log("hicpro/run_hicpro")
     benchmark:
@@ -45,11 +47,12 @@ rule run_hicpro:
     shell:
         r"""
 set -euo pipefail
-mkdir -p {params.output_dir:q} $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {params.output_dir:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 if [[ ! -s {params.container:q} ]]; then
     echo "ERROR: HiC-Pro Singularity image not found: {params.container}" >&2
     exit 1
 fi
+rmdir {params.output_dir:q} 2>/dev/null || true
 singularity exec --cleanenv \
     -B {params.bind_paths:q} \
     {params.singularity_args} \
@@ -58,9 +61,9 @@ singularity exec --cleanenv \
         -i {params.input_dir:q} \
         -o {params.output_dir:q} \
         -c {input.config:q} \
-        -p \
         {params.extra} \
         &> {log:q}
+test -d {params.hic_results_data:q}
 date > {output.done:q}
 test -s {output.done:q}
         """
@@ -123,6 +126,13 @@ raw_matrix=$(find "$raw_dir" -name "*.matrix" | head -n 1)
 raw_bins=$(find "$raw_dir" -name "*abs.bed" | head -n 1)
 iced_matrix=$(find "$iced_dir" -name "*.matrix" | head -n 1)
 iced_bins=$(find "$iced_dir" -name "*abs.bed" | head -n 1)
+if [[ -z "$iced_bins" ]]; then
+    iced_bins="$raw_bins"
+fi
+if [[ -z "$raw_matrix" || -z "$raw_bins" || -z "$iced_matrix" || -z "$iced_bins" ]]; then
+    echo "ERROR: matrix files are incomplete for $sample resolution $res" | tee {log:q}
+    exit 1
+fi
 ln -sf $(realpath "$raw_matrix") {output.raw_matrix:q}
 ln -sf $(realpath "$raw_bins") {output.raw_bins:q}
 ln -sf $(realpath "$iced_matrix") {output.iced_matrix:q}

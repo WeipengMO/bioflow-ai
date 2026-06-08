@@ -9,7 +9,8 @@ rule hicpro_matrix_to_cool:
         resolution="|".join(CTX.resolutions)
     params:
         chrom_sizes=lambda wildcards: (config.get("genome", {}) or {}).get("chrom_sizes", ""),
-        balance=lambda wildcards: str((config.get("matrix", {}) or {}).get("balance", True)).lower()
+        balance=lambda wildcards: str((config.get("matrix", {}) or {}).get("balance", True)).lower(),
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("matrix/hicpro_to_cool/{sample}.{resolution}")
     benchmark:
@@ -21,7 +22,7 @@ rule hicpro_matrix_to_cool:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.cool:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.cool:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 python scripts/convert_hicpro_matrix.py \
     --matrix {input.matrix:q} \
     --bins {input.bins:q} \
@@ -41,7 +42,8 @@ rule make_mcool:
     wildcard_constraints:
         sample=CTX.sample_pattern
     params:
-        resolutions=lambda wildcards: ",".join(CTX.resolutions)
+        resolutions=lambda wildcards: ",".join(CTX.resolutions),
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("matrix/mcool/{sample}")
     benchmark:
@@ -53,7 +55,7 @@ rule make_mcool:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.mcool:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.mcool:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 rm -f {output.mcool:q}
 cooler zoomify \
     -n {threads} \

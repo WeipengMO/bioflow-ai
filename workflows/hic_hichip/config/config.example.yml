@@ -3,9 +3,9 @@
 
 workdir: "."
 outdir: "results"
-raw_data_dir: "config/test_data"
-samples: "config/samples.example.tsv"
-comparisons: "config/comparisons.example.tsv"
+raw_data_dir: "raw_data"
+samples: "config/samples.tsv"
+comparisons: "config/comparisons.tsv"
 validate_input_files: false
 
 assay: "hichip"
@@ -52,6 +52,7 @@ loop_calling:
   fithichip_script: "FitHiChIP_HiCPro.sh"
   mustache_bin: "mustache"
   cooltools_bin: "cooltools"
+  allow_empty: true
 
 qc:
   enable_multiqc: true

@@ -1,0 +1,26 @@
+name: bioflow-hic-hichip-fithichip
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.10
+  - numpy
+  - networkx
+  - hic-straw
+  - cooler
+  - pandas
+  - pyyaml
+  - r-base
+  - r-optparse
+  - r-ggplot2
+  - r-data.table
+  - r-fdrtool
+  - r-plyr
+  - r-dplyr
+  - bioconductor-genomicranges
+  - bioconductor-edger
+  - bedtools
+  - samtools
+  - htslib
+  - bowtie2
+  - macs2

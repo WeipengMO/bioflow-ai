@@ -12,7 +12,8 @@ rule fastp_pe:
     params:
         html=PATHS.fastp_html("{sample}"),
         json=PATHS.fastp_json("{sample}"),
-        extra=lambda wildcards: (config.get("preprocessing", {}) or {}).get("fastp_extra", "")
+        extra=lambda wildcards: (config.get("preprocessing", {}) or {}).get("fastp_extra", ""),
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("fastp/{sample}")
     benchmark:
@@ -24,7 +25,7 @@ rule fastp_pe:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.r1:q}) $(dirname {params.html:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.r1:q}) $(dirname {params.html:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 fastp \
     -i {input.r1:q} \
     -I {input.r2:q} \

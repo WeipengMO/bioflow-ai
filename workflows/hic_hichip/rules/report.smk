@@ -49,7 +49,7 @@ python scripts/make_report.py \
     --qc {input.qc:q} \
     --outdir {params.outdir:q} \
     --samples {params.samples:q} \
-    --comparisons {params.comparisons:q} \
+    --comparisons "{params.comparisons}" \
     --output {output.html:q} \
     &> {log:q}
 test -s {output.html:q}

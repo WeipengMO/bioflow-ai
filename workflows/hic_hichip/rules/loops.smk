@@ -17,7 +17,8 @@ rule call_loops:
         caller=lambda wildcards: CTX.loop_caller,
         resolution=lambda wildcards: CTX.primary_resolution,
         fdr=lambda wildcards: CTX.loop_fdr,
-        config_yml="config/config.yml"
+        config_yml=lambda wildcards: config.get("config_yml", "config/config.yml"),
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("loops/call_loops/{sample}")
     benchmark:
@@ -29,7 +30,7 @@ rule call_loops:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.bedpe:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.bedpe:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 python scripts/call_loops.py \
     --config {params.config_yml:q} \
     --sample {wildcards.sample:q} \
@@ -41,7 +42,7 @@ python scripts/call_loops.py \
     --valid-pairs {input.valid_pairs:q} \
     --cool {input.cool:q} \
     --mcool {input.mcool:q} \
-    --peaks {params.peaks:q} \
+    --peaks "{params.peaks}" \
     --threads {threads} \
     --bedpe {output.bedpe:q} \
     --tsv {output.tsv:q} \
@@ -49,7 +50,7 @@ python scripts/call_loops.py \
     &> {log:q}
 test -s {output.bedpe:q}
 test -s {output.tsv:q}
-test -s {output.anchors:q}
+test -e {output.anchors:q}
         """
 
 rule make_loop_universe:

@@ -11,7 +11,8 @@ rule quantify_loop_counts:
         samples=",".join(CTX.sample_names),
         sample_table=lambda wildcards: config.get("samples", "config/samples.tsv"),
         source=lambda wildcards: CTX.quantification_source,
-        resolution=lambda wildcards: CTX.primary_resolution
+        resolution=lambda wildcards: CTX.primary_resolution,
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("diffloop/quantify_loop_counts")
     benchmark:
@@ -23,7 +24,7 @@ rule quantify_loop_counts:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.counts:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.counts:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 if [[ {params.source:q} == "validpairs" ]]; then
     python scripts/quantify_loops_from_validpairs.py \
         --universe {input.universe:q} \
@@ -73,7 +74,8 @@ rule differential_loops:
         group2=comparison_group2,
         fdr=lambda wildcards: CTX.diff_fdr,
         lfc_cutoff=lambda wildcards: CTX.diff_lfc_cutoff,
-        min_count=lambda wildcards: (config.get("diffloop", {}) or {}).get("min_count", 10)
+        min_count=lambda wildcards: (config.get("diffloop", {}) or {}).get("min_count", 10),
+        benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("diffloop/{comparison}")
     benchmark:
@@ -83,7 +85,7 @@ rule differential_loops:
     shell:
         r"""
 set -euo pipefail
-mkdir -p $(dirname {output.table:q}) $(dirname {log:q}) $(dirname {benchmark:q})
+mkdir -p $(dirname {output.table:q}) $(dirname {log:q}) {params.benchmark_dir:q}
 Rscript scripts/diffloop_deseq2.R \
     --counts {input.counts:q} \
     --loop-metadata {input.loop_metadata:q} \

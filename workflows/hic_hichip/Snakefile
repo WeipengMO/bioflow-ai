@@ -11,9 +11,9 @@ CTX = build_workflow_context(config)
 print_workflow_summary(CTX)
 
 OUTDIR = PATHS.outdir
-ENV = "envs/hic_hichip.yml"
-LOOP_ENV = "envs/loops.yml"
-DIFF_ENV = "envs/diffloop.yml"
+ENV = "../envs/hic_hichip.yml"
+LOOP_ENV = "../envs/fithichip.yml" if CTX.loop_caller == "fithichip" else "../envs/loops.yml"
+DIFF_ENV = "../envs/diffloop.yml"
 
 include:
     "rules/preprocess.smk"

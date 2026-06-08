@@ -28,18 +28,19 @@ def main():
     bin_size = " ".join(str(int(x)) for x in resolutions)
     threads = (cfg.get("threads", {}) or {}).get("hicpro", 32)
     values = {
-        "tmp_dir": str(outdir / "tmp" / "hicpro"),
-        "logs_dir": str(outdir / "logs" / "hicpro"),
+        "tmp_dir": str(hicpro.get("tmp_dir", "tmp")),
+        "logs_dir": str(hicpro.get("logs_dir", "logs")),
         "bowtie2_index_path": bowtie2_index_path,
         "reference_genome": reference_genome,
         "chrom_sizes": str(genome.get("chrom_sizes", "")),
         "restriction_fragments": str(genome.get("restriction_fragments", "")),
         "ligation_site": str(hicpro.get("ligation_site", "GATCGATC")),
         "min_mapq": str(int(hicpro.get("min_mapq", 30))),
-        "pair1_ext": "_R1.fastq.gz",
-        "pair2_ext": "_R2.fastq.gz",
+        "pair1_ext": str(hicpro.get("pair1_ext", "R1")),
+        "pair2_ext": str(hicpro.get("pair2_ext", "R2")),
         "bin_size": bin_size,
         "n_cpu": str(int(threads)),
+        "sort_ram": str(hicpro.get("sort_ram", "10000M")),
         "rm_dup": "1" if bool(hicpro.get("remove_duplicates", True)) else "0",
     }
     template = Path(args.template).read_text()
