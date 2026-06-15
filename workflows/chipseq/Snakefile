@@ -28,7 +28,9 @@ EFFECTIVE_CONTROLS = CTX.effective_controls
 
 CALL_PEAK_MODES = CTX.call_peak_modes
 CALL_PEAK_TYPES = CTX.call_peak_types
-REPLICATE_GROUPS = CTX.replicate_groups
+INTERSECT_PEAK_GROUPS = CTX.intersect_peak_groups
+CONSENSUS_PEAK_GROUPS = CTX.consensus_peak_groups
+CONSENSUS_PEAK_GROUP_PATTERN = sample_pattern(CONSENSUS_PEAK_GROUPS)
 
 ENABLE_DEEPTOOLS_PROFILE = CTX.enable_deeptools_profile
 ENABLE_CHIPQC = CTX.enable_chipqc

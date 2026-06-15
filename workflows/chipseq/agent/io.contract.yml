@@ -11,6 +11,10 @@ optional_config_keys:
   - blacklist
   - call_peak_modes
   - call_peak_types
+  - peak_set_mode
+  - peak_set_type
+  - consensus_min_support_count
+  - consensus_min_support_fraction
   - enable_alignment_filter
   - alignment_filter_min_mapq
   - alignment_filter_view_extra
@@ -50,8 +54,18 @@ generated_outputs:
     - results/macs3_results/broad/{sample}_peaks.broadPeak
     - results/macs3_results/narrow_no_control/{sample}_peaks.narrowPeak
     - results/macs3_results/broad_no_control/{sample}_peaks.broadPeak
-  consensus:
-    - results/replicate_intersect/{group}_intersect.bed
+  intersect_peaks:
+    - results/intersect_peaks/{group}_intersect_peaks.bed
+  consensus_peaks:
+    - results/consensus_peaks/groups/{group}_consensus_peaks.bed
+    - results/consensus_peaks/groups/{group}_consensus_peaks.tsv
+    - results/consensus_peaks/groups/{group}_consensus_support_matrix.tsv
+    - results/consensus_peaks/groups/{group}_consensus_peaks.saf
+    - results/consensus_peaks/all_treatments_consensus_peaks.bed
+    - results/consensus_peaks/all_treatments_consensus_peaks.tsv
+    - results/consensus_peaks/all_treatments_consensus_support_matrix.tsv
+    - results/consensus_peaks/all_treatments_consensus_peaks.saf
+    - results/consensus_peaks/counts/all_treatments_counts.tsv
   reports:
     - results/reports/chipqc/
     - results/reports/homer/

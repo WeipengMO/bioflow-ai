@@ -65,13 +65,13 @@ test -s {output:q}
         """
 
 
-rule replicate_intersect:
+rule intersect_peaks:
     input:
-        peaks=replicate_peak_inputs
+        peaks=intersect_peak_inputs
     output:
-        PATHS.replicate_consensus("{group}")
+        PATHS.intersect_peaks_bed("{group}")
     log:
-        PATHS.log("{group}.replicate_intersect")
+        PATHS.log("{group}.intersect_peaks")
     conda:
         ENV
     shell:
@@ -115,4 +115,109 @@ trap 'rm -rf "$tmpdir"' EXIT
     echo "Consensus peaks:"
     wc -l {output:q}
 }} > {log:q} 2>&1
+        """
+
+
+rule consensus_peaks_group:
+    input:
+        peaks=consensus_peak_group_inputs
+    output:
+        bed=PATHS.consensus_group_bed("{group}"),
+        tsv=PATHS.consensus_group_tsv("{group}"),
+        matrix=PATHS.consensus_group_matrix("{group}"),
+        saf=PATHS.consensus_group_saf("{group}")
+    wildcard_constraints:
+        group=CONSENSUS_PEAK_GROUP_PATTERN
+    params:
+        sample_args=consensus_peak_group_sample_args,
+        min_support_count=lambda wildcards: CTX.consensus_min_support_count,
+        min_support_fraction=lambda wildcards: CTX.consensus_min_support_fraction
+    log:
+        PATHS.log("{group}.consensus_peaks")
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output.bed:q}) $(dirname {log:q})
+python {workflow.basedir:q}/scripts/make_consensus_peaks.py \
+    {params.sample_args} \
+    --bed {output.bed:q} \
+    --tsv {output.tsv:q} \
+    --matrix {output.matrix:q} \
+    --saf {output.saf:q} \
+    --min-support-count {params.min_support_count} \
+    --min-support-fraction {params.min_support_fraction} \
+    > {log:q} 2>&1
+test -s {output.bed:q}
+test -s {output.tsv:q}
+test -s {output.matrix:q}
+test -s {output.saf:q}
+        """
+
+
+rule consensus_peaks_all_treatments:
+    input:
+        peaks=consensus_peak_all_inputs
+    output:
+        bed=PATHS.consensus_all_bed(),
+        tsv=PATHS.consensus_all_tsv(),
+        matrix=PATHS.consensus_all_matrix(),
+        saf=PATHS.consensus_all_saf()
+    params:
+        sample_args=consensus_peak_all_sample_args,
+        min_support_count=lambda wildcards: CTX.consensus_min_support_count,
+        min_support_fraction=lambda wildcards: CTX.consensus_min_support_fraction
+    log:
+        PATHS.log("all_treatments.consensus_peaks")
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output.bed:q}) $(dirname {log:q})
+python {workflow.basedir:q}/scripts/make_consensus_peaks.py \
+    {params.sample_args} \
+    --bed {output.bed:q} \
+    --tsv {output.tsv:q} \
+    --matrix {output.matrix:q} \
+    --saf {output.saf:q} \
+    --min-support-count {params.min_support_count} \
+    --min-support-fraction {params.min_support_fraction} \
+    > {log:q} 2>&1
+test -s {output.bed:q}
+test -s {output.tsv:q}
+test -s {output.matrix:q}
+test -s {output.saf:q}
+        """
+
+
+rule count_consensus_peaks:
+    input:
+        bed=PATHS.consensus_all_bed(),
+        bams=consensus_count_bams,
+        bais=consensus_count_bais
+    output:
+        PATHS.consensus_counts()
+    params:
+        sample_names=consensus_count_sample_names
+    log:
+        PATHS.log("all_treatments.consensus_counts")
+    conda:
+        ENV
+    shell:
+        r"""
+set -euo pipefail
+mkdir -p $(dirname {output:q}) $(dirname {log:q})
+tmp_multicov="$(dirname {output:q})/.all_treatments_counts.multicov.tsv"
+bedtools multicov \
+    -bams {input.bams:q} \
+    -bed {input.bed:q} \
+    > "$tmp_multicov" 2> {log:q}
+python {workflow.basedir:q}/scripts/format_multicov_counts.py \
+    --multicov "$tmp_multicov" \
+    --samples {params.sample_names} \
+    --output {output:q} \
+    >> {log:q} 2>&1
+test -s {output:q}
         """

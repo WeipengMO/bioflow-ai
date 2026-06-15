@@ -48,7 +48,8 @@ class WorkflowPaths:
         self.bigwig = self.result("bigwig")
         self.deeptools_profile = self.result("deeptools_profile")
         self.macs3_results = self.result("macs3_results")
-        self.replicate_intersect = self.result("replicate_intersect")
+        self.intersect_peaks = self.result("intersect_peaks")
+        self.consensus_peaks = self.result("consensus_peaks")
         self.logs = self.result("logs")
         self.default_chipqc_report = self.result("reports", "chipqc")
         self.default_homer_report = self.result("reports", "homer")
@@ -111,8 +112,35 @@ class WorkflowPaths:
         extension = PEAK_EXTENSIONS[peak_type]
         return f"{self.macs3_results}/{directory}/{sample}_peaks.{extension}"
 
-    def replicate_consensus(self, group):
-        return f"{self.replicate_intersect}/{group}_intersect.bed"
+    def intersect_peaks_bed(self, group):
+        return f"{self.intersect_peaks}/{group}_intersect_peaks.bed"
+
+    def consensus_group_bed(self, group):
+        return f"{self.consensus_peaks}/groups/{group}_consensus_peaks.bed"
+
+    def consensus_group_tsv(self, group):
+        return f"{self.consensus_peaks}/groups/{group}_consensus_peaks.tsv"
+
+    def consensus_group_matrix(self, group):
+        return f"{self.consensus_peaks}/groups/{group}_consensus_support_matrix.tsv"
+
+    def consensus_group_saf(self, group):
+        return f"{self.consensus_peaks}/groups/{group}_consensus_peaks.saf"
+
+    def consensus_all_bed(self):
+        return f"{self.consensus_peaks}/all_treatments_consensus_peaks.bed"
+
+    def consensus_all_tsv(self):
+        return f"{self.consensus_peaks}/all_treatments_consensus_peaks.tsv"
+
+    def consensus_all_matrix(self):
+        return f"{self.consensus_peaks}/all_treatments_consensus_support_matrix.tsv"
+
+    def consensus_all_saf(self):
+        return f"{self.consensus_peaks}/all_treatments_consensus_peaks.saf"
+
+    def consensus_counts(self):
+        return f"{self.consensus_peaks}/counts/all_treatments_counts.tsv"
 
     def log(self, name):
         return f"{self.logs}/{name}.log"
@@ -378,15 +406,26 @@ def select_default_peak_mode(call_peak_modes, has_controls):
     return "with_control"
 
 
-def validate_peak_selection(peak_mode, peak_type, call_peak_modes, call_peak_types, has_controls, label):
-    validate_choices([peak_mode], PEAK_MODES, f"{label}_peak_mode")
-    validate_choices([peak_type], PEAK_TYPES, f"{label}_peak_type")
+def validate_peak_selection(
+    peak_mode,
+    peak_type,
+    call_peak_modes,
+    call_peak_types,
+    has_controls,
+    label,
+    mode_key=None,
+    type_key=None,
+):
+    mode_key = mode_key or f"{label}_peak_mode"
+    type_key = type_key or f"{label}_peak_type"
+    validate_choices([peak_mode], PEAK_MODES, mode_key)
+    validate_choices([peak_type], PEAK_TYPES, type_key)
     if peak_mode not in call_peak_modes:
-        raise ValueError(f"config['{label}_peak_mode'] is '{peak_mode}', but call_peak_modes does not include it.")
+        raise ValueError(f"config['{mode_key}'] is '{peak_mode}', but call_peak_modes does not include it.")
     if peak_type not in call_peak_types:
-        raise ValueError(f"config['{label}_peak_type'] is '{peak_type}', but call_peak_types does not include it.")
+        raise ValueError(f"config['{type_key}'] is '{peak_type}', but call_peak_types does not include it.")
     if peak_mode == "with_control" and not has_controls:
-        raise ValueError(f"config['{label}_peak_mode'] is 'with_control', but no effective controls are configured.")
+        raise ValueError(f"config['{mode_key}'] is 'with_control', but no effective controls are configured.")
 
 
 def callpeak_outputs(treatments, call_peak_modes, call_peak_types, has_controls):
@@ -446,12 +485,21 @@ def load_replicate_data(samples):
     return {group: unique_list(samples) for group, samples in replicate_data.items()}
 
 
-def valid_replicate_groups(replicate_data, treatments):
+def valid_intersect_peak_groups(replicate_data, treatments):
     treatment_set = set(treatments)
     return sorted(
         group
         for group, replicates in replicate_data.items()
         if len(replicates) >= 2 and all(sample in treatment_set for sample in replicates)
+    )
+
+
+def valid_consensus_peak_groups(replicate_data, treatments):
+    treatment_set = set(treatments)
+    return sorted(
+        group
+        for group, grouped_samples in replicate_data.items()
+        if grouped_samples and all(sample in treatment_set for sample in grouped_samples)
     )
 
 
@@ -483,17 +531,26 @@ def build_workflow_context(config):
     default_peak_type = "narrow" if "narrow" in call_peak_types else call_peak_types[0]
 
     replicate_data = load_replicate_data(sample_metadata)
-    replicate_peak_mode = config.get("replicate_peak_mode", default_peak_mode)
-    replicate_peak_type = config.get("replicate_peak_type", default_peak_type)
+    peak_set_mode = config.get("peak_set_mode", default_peak_mode)
+    peak_set_type = config.get("peak_set_type", default_peak_type)
     validate_peak_selection(
-        replicate_peak_mode,
-        replicate_peak_type,
+        peak_set_mode,
+        peak_set_type,
         call_peak_modes,
         call_peak_types,
         has_controls,
-        "replicate",
+        "peak_set",
+        mode_key="peak_set_mode",
+        type_key="peak_set_type",
     )
-    replicate_groups = valid_replicate_groups(replicate_data, treatments)
+    intersect_peak_groups = valid_intersect_peak_groups(replicate_data, treatments)
+    consensus_peak_groups = valid_consensus_peak_groups(replicate_data, treatments)
+    consensus_min_support_count = int(config.get("consensus_min_support_count", 1))
+    consensus_min_support_fraction = float(config.get("consensus_min_support_fraction", 0.0))
+    if consensus_min_support_count < 1:
+        raise ValueError("config['consensus_min_support_count'] must be at least 1.")
+    if consensus_min_support_fraction < 0 or consensus_min_support_fraction > 1:
+        raise ValueError("config['consensus_min_support_fraction'] must be between 0 and 1.")
 
     enable_deeptools_profile = config_bool("enable_deeptools_profile", bool(config.get("regions_bed")))
     if enable_deeptools_profile and not config.get("regions_bed"):
@@ -519,8 +576,8 @@ def build_workflow_context(config):
     enable_homer = config_bool("enable_homer", False)
     homer_peak_mode = config.get("homer_peak_mode", default_peak_mode)
     homer_peak_type = config.get("homer_peak_type", default_peak_type)
-    homer_input_source = config.get("homer_input_source", "replicate_intersect")
-    validate_choices([homer_input_source], {"sample_peaks", "replicate_intersect"}, "homer_input_source")
+    homer_input_source = config.get("homer_input_source", "intersect_peaks")
+    validate_choices([homer_input_source], {"sample_peaks", "intersect_peaks"}, "homer_input_source")
     if enable_homer:
         validate_peak_selection(
             homer_peak_mode,
@@ -535,11 +592,11 @@ def build_workflow_context(config):
         if not config.get("gtf"):
             raise ValueError("config['gtf'] is required when enable_homer is true.")
 
-    homer_targets = replicate_groups if homer_input_source == "replicate_intersect" else treatments
+    homer_targets = intersect_peak_groups if homer_input_source == "intersect_peaks" else treatments
     homer_targets = [target for target in homer_targets if target not in set(as_list(config.get("homer_exclude_targets", [])))]
-    if enable_homer and homer_input_source == "replicate_intersect" and not homer_targets:
+    if enable_homer and homer_input_source == "intersect_peaks" and not homer_targets:
         raise ValueError(
-            "HOMER is configured to use replicate_intersect, but no valid replicate groups were found. "
+            "HOMER is configured to use intersect_peaks, but no valid treatment groups were found. "
             "Check treatment sample group metadata."
         )
 
@@ -562,9 +619,12 @@ def build_workflow_context(config):
         call_peak_modes=call_peak_modes,
         call_peak_types=call_peak_types,
         replicate_data=replicate_data,
-        replicate_peak_mode=replicate_peak_mode,
-        replicate_peak_type=replicate_peak_type,
-        replicate_groups=replicate_groups,
+        peak_set_mode=peak_set_mode,
+        peak_set_type=peak_set_type,
+        intersect_peak_groups=intersect_peak_groups,
+        consensus_peak_groups=consensus_peak_groups,
+        consensus_min_support_count=consensus_min_support_count,
+        consensus_min_support_fraction=consensus_min_support_fraction,
         enable_deeptools_profile=enable_deeptools_profile,
         enable_alignment_filter=enable_alignment_filter,
         enable_blacklist_filter=enable_blacklist_filter,
@@ -588,7 +648,12 @@ def print_workflow_summary(ctx):
     print("Peak treatments: " + ",".join(ctx.treatments))
     print("Control strategy: " + ctx.control_strategy)
     print("Peak outputs: " + ";".join([f"{m}:{t}" for m in ctx.call_peak_modes for t in ctx.call_peak_types]))
-    print("Replicate groups: " + (",".join(ctx.replicate_groups) if ctx.replicate_groups else "none"))
+    print("Intersect peak groups: " + (",".join(ctx.intersect_peak_groups) if ctx.intersect_peak_groups else "none"))
+    print("Consensus peak groups: " + (",".join(ctx.consensus_peak_groups) if ctx.consensus_peak_groups else "none"))
+    print(
+        "Consensus support threshold: "
+        + f"count>={ctx.consensus_min_support_count},fraction>={ctx.consensus_min_support_fraction:g}"
+    )
     print("Pre-MarkDuplicates alignment filter: " + ("enabled" if ctx.enable_alignment_filter else "disabled"))
     print("Post-MarkDuplicates blacklist filter: " + ("enabled" if ctx.enable_blacklist_filter else "disabled"))
     print("ChIPQC: " + ("enabled" if ctx.enable_chipqc else "disabled"))
@@ -601,7 +666,16 @@ def all_outputs(ctx):
         expand(analysis_bai("{sample}"), sample=ctx.samples),
         expand(PATHS.bigwig_track("{sample}"), sample=ctx.samples),
         callpeak_outputs(ctx.treatments, ctx.call_peak_modes, ctx.call_peak_types, ctx.has_effective_control),
-        expand(PATHS.replicate_consensus("{group}"), group=ctx.replicate_groups),
+        expand(PATHS.intersect_peaks_bed("{group}"), group=ctx.intersect_peak_groups),
+        expand(PATHS.consensus_group_bed("{group}"), group=ctx.consensus_peak_groups),
+        expand(PATHS.consensus_group_tsv("{group}"), group=ctx.consensus_peak_groups),
+        expand(PATHS.consensus_group_matrix("{group}"), group=ctx.consensus_peak_groups),
+        expand(PATHS.consensus_group_saf("{group}"), group=ctx.consensus_peak_groups),
+        PATHS.consensus_all_bed(),
+        PATHS.consensus_all_tsv(),
+        PATHS.consensus_all_matrix(),
+        PATHS.consensus_all_saf(),
+        PATHS.consensus_counts(),
     ]
 
     if ctx.enable_deeptools_profile:
@@ -637,8 +711,49 @@ def replicates_for_group(wildcards):
     return replicates
 
 
-def replicate_peak_inputs(wildcards):
-    return [PATHS.peak(sample, CTX.replicate_peak_mode, CTX.replicate_peak_type) for sample in replicates_for_group(wildcards)]
+def intersect_peak_inputs(wildcards):
+    return [PATHS.peak(sample, CTX.peak_set_mode, CTX.peak_set_type) for sample in replicates_for_group(wildcards)]
+
+
+def consensus_peak_group_samples(wildcards):
+    return CTX.replicate_data[wildcards.group]
+
+
+def consensus_peak_group_inputs(wildcards):
+    return [PATHS.peak(sample, CTX.peak_set_mode, CTX.peak_set_type) for sample in consensus_peak_group_samples(wildcards)]
+
+
+def consensus_peak_all_inputs(wildcards):
+    return [PATHS.peak(sample, CTX.peak_set_mode, CTX.peak_set_type) for sample in CTX.treatments]
+
+
+def consensus_peak_sample_args(samples, peaks):
+    if len(samples) != len(peaks):
+        raise ValueError("Consensus peak sample and peak-file counts do not match.")
+    return " ".join(
+        f"--sample {shlex.quote(str(sample))} {shlex.quote(str(peak))}"
+        for sample, peak in zip(samples, peaks)
+    )
+
+
+def consensus_peak_group_sample_args(wildcards, input):
+    return consensus_peak_sample_args(consensus_peak_group_samples(wildcards), input.peaks)
+
+
+def consensus_peak_all_sample_args(wildcards, input):
+    return consensus_peak_sample_args(CTX.treatments, input.peaks)
+
+
+def consensus_count_bams(wildcards):
+    return [analysis_bam(sample) for sample in CTX.samples]
+
+
+def consensus_count_bais(wildcards):
+    return [analysis_bai(sample) for sample in CTX.samples]
+
+
+def consensus_count_sample_names(wildcards):
+    return " ".join(shlex.quote(str(sample)) for sample in CTX.samples)
 
 
 def macs3_input(wildcards):
@@ -698,8 +813,8 @@ def bowtie2_read_group_arg(wildcards):
 
 
 def homer_raw_peak_input(wildcards):
-    if CTX.homer_input_source == "replicate_intersect":
-        return PATHS.replicate_consensus(wildcards.target)
+    if CTX.homer_input_source == "intersect_peaks":
+        return PATHS.intersect_peaks_bed(wildcards.target)
     return PATHS.peak(wildcards.target, CTX.homer_peak_mode, CTX.homer_peak_type)
 
 

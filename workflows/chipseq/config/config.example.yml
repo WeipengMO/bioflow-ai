@@ -38,9 +38,14 @@ macs3_broad_cutoff: 0.1
 # Extra arguments appended directly to macs3 callpeak. Leave empty for defaults.
 macs3_extra: ""
 
-# Replicate consensus peaks
-replicate_peak_mode: with_control
-replicate_peak_type: narrow
+# Peak set used by intersect_peaks and consensus_peaks.
+peak_set_mode: with_control
+peak_set_type: narrow
+
+# Consensus peak universe.
+# Defaults keep every union peak; increase one threshold for stricter support.
+consensus_min_support_count: 1
+consensus_min_support_fraction: 0.0
 
 # ChIPQC
 # If chipqc_sample_sheet is empty and enable_chipqc is true, a generic sheet is generated automatically.
@@ -49,7 +54,7 @@ chipqc_peak_mode: with_control
 chipqc_peak_type: narrow
 
 # HOMER motif enrichment
-homer_input_source: replicate_intersect   # replicate_intersect or sample_peaks
+homer_input_source: intersect_peaks   # intersect_peaks or sample_peaks
 homer_peak_mode: with_control
 homer_peak_type: narrow
 homer_genome: hg38

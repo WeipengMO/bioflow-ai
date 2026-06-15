@@ -159,7 +159,7 @@ Rules for project setup:
 
 - Each FASTQ sample is listed once.
 - `role` is required and must be `treatment` or `control`.
-- `role: treatment` marks an experimental ChIP/CUT&Tag sample. These samples are used for MACS3 peak calling, replicate consensus, ChIPQC rows, and HOMER targets.
+- `role: treatment` marks an experimental ChIP/CUT&Tag sample. These samples are used for MACS3 peak calling, intersect peaks, consensus peaks, ChIPQC rows, and HOMER targets.
 - `role: control` marks an input/IgG/control sample. These samples are preprocessed into BAM/bigWig files, but they are not peak-called as treatments.
 - `group` names biological replicates for consensus peaks.
 - `control` on a treatment points to either one control sample or one control pool.
@@ -236,7 +236,7 @@ For a no-control run, do not add `role: control` samples and do not set `control
 ```yaml
 call_peak_modes:
   - without_control
-replicate_peak_mode: without_control
+peak_set_mode: without_control
 chipqc_peak_mode: without_control
 homer_peak_mode: without_control
 ```
@@ -306,15 +306,17 @@ fastq_manifest: config/fastq_manifest.tsv
 | `enable_blacklist_filter` | Remove blacklist overlaps after `MarkDuplicates`; default `true` |
 | `macs3_broad_cutoff` | Value passed to `--broad-cutoff` for broad peak calling |
 | `macs3_extra` | Extra arguments appended directly to `macs3 callpeak`, such as `--qvalue 0.01` |
-| `replicate_peak_mode` | Peak mode used for replicate consensus |
-| `replicate_peak_type` | Peak type used for replicate consensus |
+| `peak_set_mode` | Peak mode used by `intersect_peaks` and `consensus_peaks` |
+| `peak_set_type` | Peak type used by `intersect_peaks` and `consensus_peaks` |
+| `consensus_min_support_count` | Minimum number of treatment samples required for a consensus peak; default `1` |
+| `consensus_min_support_fraction` | Minimum treatment-sample fraction required for a consensus peak; default `0.0` |
 | `enable_deeptools_profile` | Generate deepTools matrix/profile plots |
 | `enable_chipqc` | Generate ChIPQC report |
 | `chipqc_sample_sheet` | Optional user-provided ChIPQC sample sheet |
 | `chipqc_peak_mode` | Peak mode used by ChIPQC |
 | `chipqc_peak_type` | Peak type used by ChIPQC |
 | `enable_homer` | Run HOMER motif enrichment |
-| `homer_input_source` | `replicate_intersect` or `sample_peaks` |
+| `homer_input_source` | `intersect_peaks` or `sample_peaks` |
 | `homer_genome` | HOMER genome name or FASTA path |
 | `blacklist` | Optional BED blacklist reused by final BAM filtering and HOMER |
 | `homer_min_peaks` | Minimum peaks required to run HOMER; default is 50 |
@@ -349,7 +351,8 @@ bedtools intersect -v -abam input.sorted.rmdup.bam -b ${blacklist} > input.sorte
 <outdir>/bigwig/*.CPM.bw
 <outdir>/deeptools_profile/*.scale.png
 <outdir>/macs3_results/
-<outdir>/replicate_intersect/
+<outdir>/intersect_peaks/
+<outdir>/consensus_peaks/
 <outdir>/reports/chipqc/
 <outdir>/reports/homer/
 <outdir>/logs/
@@ -455,27 +458,60 @@ When `enable_blacklist_filter: true`, pooled controls are written as:
 <outdir>/macs3_results/broad_no_control/
 ```
 
-10. `replicate_intersect`
+10. `intersect_peaks`
    - Uses treatment samples that share the same `group`.
    - Intersects replicate peak files with `bedtools multiinter`.
    - Runs only for groups with at least two treatment samples.
    - Consensus intervals must be supported by all replicate peak files in that group.
+   - This is a strict all-replicate intersection for conservative QC, not the default downstream peak universe.
    - Outputs:
 
 ```text
-<outdir>/replicate_intersect/{group}_intersect.bed
+<outdir>/intersect_peaks/{group}_intersect_peaks.bed
 ```
 
-11. `generate_chipqc_sample_sheet`
+11. `consensus_peaks_group` and `consensus_peaks_all_treatments`
+   - Use the MACS3 peak files selected by `peak_set_mode` and `peak_set_type`.
+   - Merge overlapping or directly adjacent peak intervals into a consensus peak universe.
+   - Group-level outputs use treatment samples that share the same `group`.
+   - All-treatment outputs use every `role: treatment` sample and exclude controls.
+   - `consensus_min_support_count` and `consensus_min_support_fraction` can filter weakly supported union peaks.
+   - BED outputs contain merged intervals with `consensus_peak_N` IDs and support counts.
+   - TSV outputs record `peak_id`, coordinates, `support_count`, `support_fraction`, and `support_samples`.
+   - Support matrix outputs record each treatment sample as present/absent for each consensus peak.
+   - SAF outputs can be used by counting tools such as featureCounts.
+   - Outputs:
+
+```text
+<outdir>/consensus_peaks/groups/{group}_consensus_peaks.bed
+<outdir>/consensus_peaks/groups/{group}_consensus_peaks.tsv
+<outdir>/consensus_peaks/groups/{group}_consensus_support_matrix.tsv
+<outdir>/consensus_peaks/groups/{group}_consensus_peaks.saf
+<outdir>/consensus_peaks/all_treatments_consensus_peaks.bed
+<outdir>/consensus_peaks/all_treatments_consensus_peaks.tsv
+<outdir>/consensus_peaks/all_treatments_consensus_support_matrix.tsv
+<outdir>/consensus_peaks/all_treatments_consensus_peaks.saf
+```
+
+12. `count_consensus_peaks`
+   - Counts final analysis BAM reads over the all-treatment consensus peak universe with `bedtools multicov`.
+   - Includes treatment and control samples as count columns, so the matrix can feed downstream differential binding workflows.
+   - Outputs:
+
+```text
+<outdir>/consensus_peaks/counts/all_treatments_counts.tsv
+```
+
+13. `generate_chipqc_sample_sheet`
    - Runs only when `enable_chipqc: true` and `chipqc_sample_sheet` is empty.
-   - Derives the sheet from `samples`, control mapping, replicate groups, and selected peak files.
+   - Derives the sheet from `samples`, control mapping, treatment groups, and selected peak files.
    - Generates:
 
 ```text
 <outdir>/reports/chipqc/chipqc_sample_sheet.generated.tsv
 ```
 
-12. `chipqc_report`
+14. `chipqc_report`
     - Runs only when `enable_chipqc: true`.
     - Uses treatment BAMs, control BAMs if configured, selected MACS3 peak files, and the ChIPQC sample sheet.
   - Uses the blacklist-filtered BAM when `enable_blacklist_filter: true`.
@@ -486,20 +522,20 @@ When `enable_blacklist_filter: true`, pooled controls are written as:
 <outdir>/reports/chipqc/.chipqc_complete
 ```
 
-12. `homer_prepare_motif_peaks`
+15. `homer_prepare_motif_peaks`
     - Runs only when `enable_homer: true`.
-    - Uses either replicate consensus peaks or per-sample MACS3 peaks depending on `homer_input_source`.
+    - Uses either intersect peaks or per-sample MACS3 peaks depending on `homer_input_source`.
     - Uses MACS summits for narrowPeak motif analysis when `homer_use_summit: true`; consensus BED inputs fall back to interval centers.
     - If `blacklist` is set, removes blacklisted intervals before motif enrichment.
     - Outputs prepared temporary BED files under `<outdir>/homer_inputs/`.
 
-13. `homer_prepare_annotation_peaks`
+16. `homer_prepare_annotation_peaks`
     - Runs only when `enable_homer: true`.
     - Uses full peak intervals instead of summit-centered 1 bp intervals.
     - If `blacklist` is set, removes blacklisted intervals before annotation.
     - Outputs prepared temporary BED files under `<outdir>/homer_inputs/`.
 
-14. `homer_find_motifs`
+17. `homer_find_motifs`
     - Runs `findMotifsGenome.pl`.
     - Skips HOMER if fewer than `homer_min_peaks` peaks remain after filtering.
     - Starts from `homer_prepare_motif_peaks`.
@@ -510,13 +546,13 @@ When `enable_blacklist_filter: true`, pooled controls are written as:
 <outdir>/reports/homer/{homer_input_source}_{homer_peak_mode}_{homer_peak_type}/{target}/.motifs_complete
 ```
 
-15. `homer_annotate_peaks`
+18. `homer_annotate_peaks`
     - Runs `annotatePeaks.pl` on the full-interval prepared BED from `homer_prepare_annotation_peaks`.
     - Independent from `homer_find_motifs`; it does not wait for motif discovery outputs.
     - Always passes `-gtf {gtf}` from `config/config.yml`.
     - Writes `<outdir>/reports/homer/.../{target}/annotatePeaks.txt`.
 
-16. `homer_plot_annotation_distribution`
+19. `homer_plot_annotation_distribution`
     - Reads `annotatePeaks.txt` and collapses HOMER annotations into major feature classes.
     - Writes a pie chart for promoter, exon, intron, intergenic, TTS, and other categories.
     - Writes `<outdir>/reports/homer/.../{target}/peak_feature_distribution.pie.png`.

@@ -1,6 +1,6 @@
 workflow:
   name: chipseq
-  description: ChIP-seq/CUT&Tag processing workflow from FASTQ to BAM, bigWig, MACS3 peaks, replicate consensus peaks, ChIPQC, and HOMER.
+  description: ChIP-seq/CUT&Tag processing workflow from FASTQ to BAM, bigWig, MACS3 peaks, strict intersect peaks, consensus peak universes, read counts, ChIPQC, and HOMER.
   status: development
 
 entrypoint:
@@ -36,8 +36,10 @@ outputs:
     path: results/bigwig/
   macs3_peaks:
     path: results/macs3_results/
-  replicate_consensus:
-    path: results/replicate_intersect/
+  intersect_peaks:
+    path: results/intersect_peaks/
+  consensus_peaks:
+    path: results/consensus_peaks/
   chipqc:
     path: results/reports/chipqc/
   homer:
@@ -58,7 +60,8 @@ safety:
     - results/bigwig/
     - results/deeptools_profile/
     - results/macs3_results/
-    - results/replicate_intersect/
+    - results/intersect_peaks/
+    - results/consensus_peaks/
     - results/reports/
     - results/homer_inputs/
     - results/logs/
