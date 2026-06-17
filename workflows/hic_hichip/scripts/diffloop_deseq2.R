@@ -16,6 +16,7 @@ option_list <- list(
   optparse::make_option("--fdr", type="double", default=0.05),
   optparse::make_option(c("--lfc-cutoff"), dest="lfc_cutoff", type="double", default=0),
   optparse::make_option(c("--min-count"), dest="min_count", type="integer", default=10),
+  optparse::make_option(c("--design-formula"), dest="design_formula", type="character", default="~ group"),
   optparse::make_option(c("--out-table"), dest="out_table", type="character"),
   optparse::make_option(c("--out-significant"), dest="out_significant", type="character"),
   optparse::make_option(c("--out-up"), dest="out_up", type="character"),
@@ -46,7 +47,16 @@ run_deseq <- requireNamespace("DESeq2", quietly=TRUE) &&
   nrow(count_mat_f) >= 2
 
 if (run_deseq) {
-  dds <- DESeq2::DESeqDataSetFromMatrix(countData=count_mat_f, colData=coldata, design=~group)
+  design_formula <- as.formula(opt$design_formula)
+  needed_terms <- all.vars(design_formula)
+  missing_terms <- setdiff(needed_terms, colnames(coldata))
+  if (length(missing_terms) > 0) {
+    stop(paste("Design formula references missing sample metadata columns:", paste(missing_terms, collapse=", ")))
+  }
+  if (!("group" %in% needed_terms)) {
+    warning("design_formula does not contain group; DESeq2 contrast still uses group and may be invalid.")
+  }
+  dds <- DESeq2::DESeqDataSetFromMatrix(countData=count_mat_f, colData=coldata, design=design_formula)
   dds <- DESeq2::DESeq(dds, quiet=TRUE)
   res <- as.data.frame(DESeq2::results(dds, contrast=c("group", opt$group1, opt$group2)))
   res$loop_id <- rownames(res)
@@ -92,14 +102,28 @@ write.table(up[, intersect(bedpe_cols, colnames(up)), drop=FALSE], opt$out_up, s
 write.table(down[, intersect(bedpe_cols, colnames(down)), drop=FALSE], opt$out_down, sep="\t", quote=FALSE, row.names=FALSE)
 
 pdf(opt$volcano)
-plot(merged$log2FoldChange, -log10(merged$padj), pch=16, cex=0.6, xlab="log2FC", ylab="-log10(FDR)", main=paste("Differential loops", opt$comparison))
-abline(v=c(-opt$lfc_cutoff, opt$lfc_cutoff), lty=2)
-abline(h=-log10(opt$fdr), lty=2)
+if (nrow(merged) == 0) {
+  plot.new(); text(0.5, 0.5, "No loops passed filtering")
+} else if (all(is.na(merged$padj))) {
+  plot(merged$log2FoldChange, log10(merged$baseMean + 1), pch=16, cex=0.6,
+       xlab="log2FC", ylab="log10(baseMean + 1)",
+       main=paste("Descriptive fold-change only", opt$comparison))
+  abline(v=0, lty=2)
+  mtext("No formal DESeq2 statistics; p-values/FDR are NA", side=3, line=0.2, cex=0.75)
+} else {
+  plot(merged$log2FoldChange, -log10(merged$padj), pch=16, cex=0.6, xlab="log2FC", ylab="-log10(FDR)", main=paste("Differential loops", opt$comparison))
+  abline(v=c(-opt$lfc_cutoff, opt$lfc_cutoff), lty=2)
+  abline(h=-log10(opt$fdr), lty=2)
+}
 dev.off()
 
 pdf(opt$ma_plot)
-plot(log10(merged$baseMean + 1), merged$log2FoldChange, pch=16, cex=0.6, xlab="log10(baseMean + 1)", ylab="log2FC", main=paste("MA plot", opt$comparison))
-abline(h=0, lty=2)
+if (nrow(merged) == 0) {
+  plot.new(); text(0.5, 0.5, "No loops passed filtering")
+} else {
+  plot(log10(merged$baseMean + 1), merged$log2FoldChange, pch=16, cex=0.6, xlab="log10(baseMean + 1)", ylab="log2FC", main=paste("MA plot", opt$comparison))
+  abline(h=0, lty=2)
+}
 dev.off()
 
 pdf(opt$heatmap)

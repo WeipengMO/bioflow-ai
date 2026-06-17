@@ -12,6 +12,7 @@ The script copies editable example files:
     config/config.example.yml     -> <project_dir>/config/config.yml
     config/samples.example.tsv    -> <project_dir>/config/samples.tsv
     config/comparisons.example.tsv -> <project_dir>/config/comparisons.tsv
+    config/hicpro.config.template -> <project_dir>/config/hicpro.config.template
     config/run_snakemake.env.example -> <project_dir>/config/run_snakemake.env
 
 The script links reusable pipeline files:
@@ -106,6 +107,7 @@ link_item() {
 copy_example "config/config.example.yml" "config/config.yml"
 copy_example "config/samples.example.tsv" "config/samples.tsv"
 copy_example "config/comparisons.example.tsv" "config/comparisons.tsv"
+copy_example "config/hicpro.config.template" "config/hicpro.config.template"
 copy_example "config/run_snakemake.env.example" "config/run_snakemake.env"
 
 link_item "Snakefile"

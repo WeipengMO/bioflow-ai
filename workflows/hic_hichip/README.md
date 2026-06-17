@@ -16,11 +16,12 @@ Main steps:
 3. Link HiC-Pro `allValidPairs` and matrix outputs into standardized BioFlowAI result paths.
 4. Convert HiC-Pro sparse matrices to `.cool` and `.mcool`.
 5. Collect HiC-Pro QC and generate summary plots/MultiQC report.
-6. Call loops per sample.
-7. Build a consensus loop universe.
-8. Quantify loop contacts across samples.
-9. Run differential loop analysis using DESeq2 when biological replicates are available; otherwise write descriptive fold-change results.
-10. Optionally annotate promoter/enhancer loops.
+6. For HiChIP/FitHiChIP, resolve peak input or call HiChIP-derived fallback peaks when configured.
+7. Call loops per sample.
+8. Build an anchor-clustered consensus loop universe.
+9. Quantify loop contacts across samples.
+10. Run differential loop analysis using DESeq2 when biological replicates are available; otherwise write descriptive fold-change results.
+11. Optionally annotate promoter/enhancer loops.
 
 ## Required inputs
 
@@ -34,6 +35,7 @@ Edit `config/config.yml` and provide:
 - Bowtie2 index prefix.
 - HiC-Pro restriction fragment BED.
 - HiC-Pro 3 Singularity image.
+- For HiChIP/FitHiChIP, peak input is required through one of the sources below.
 
 Default HiC-Pro container:
 
@@ -58,6 +60,7 @@ Key sections in `config/config.yml`:
 - `genome`: reference files.
 - `preprocessing`: optional fastp settings. `enable_fastp` defaults to `false` for Hi-C/HiChIP.
 - `hicpro`: Singularity image, HiC-Pro config template, resolutions, enzyme/ligation settings.
+- `peak_calling`: optional HiChIP-derived fallback peak calling with MACS2/MACS3.
 - `loop_calling`: FitHiChIP/Mustache/cooltools settings.
 - `diffloop`: loop universe, quantification source, DESeq2 thresholds.
 - `qc`: MultiQC and contact QC options.
@@ -71,6 +74,8 @@ results/
 ├── hicpro_input/
 ├── hicpro/
 ├── valid_pairs/
+├── bam/
+├── peaks/
 ├── matrix/
 ├── cool/
 ├── qc/
@@ -88,6 +93,7 @@ Important final outputs:
 
 - `results/valid_pairs/<sample>.allValidPairs`
 - `results/cool/<sample>.mcool`
+- `results/peaks/<sample>/<sample>.auto_peaks.bed` when auto peak calling is used.
 - `results/loops/<sample>/<sample>.loops.bedpe`
 - `results/loops/consensus/loop_universe.bedpe`
 - `results/diffloop/counts/loop_counts.tsv`
@@ -99,6 +105,14 @@ Important final outputs:
 For **HiChIP**, the recommended caller is `fithichip`. For biologically meaningful HiChIP loop calling, provide peak files, especially for marks such as H3K27ac, CTCF, RAD21, or RNAPII.
 
 For **Hi-C**, `mustache` or `cooltools` is easier to deploy than GPU-dependent HiCCUPS. HiCCUPS can be added later as an optional rule if the compute environment supports it.
+
+Peak priority for FitHiChIP is:
+
+1. `samples.tsv` sample-specific `peak_bed`, preferably matched ChIP-seq.
+2. `loop_calling.external_peaks`, for a high-quality global external peak set.
+3. `peak_calling.enable_auto_peak: true`, which calls HiChIP-derived fallback peaks from the sample itself.
+
+Auto-called peaks are **HiChIP-derived pseudo peaks**. They are useful as a fallback when external ChIP-seq peaks are unavailable, but they are not independent ChIP-seq evidence and can be affected by 3D ligation/contact bias. H3K27ac HiChIP-derived peaks may be useful for fallback regulatory loop calling; CTCF/RAD21-derived peaks are often more anchor-like. Do not over-interpret auto-peak loops as independently supported enhancer peaks.
 
 FitHiChIP is an external script package with Python/R/command-line dependencies. For a project-local install, run:
 

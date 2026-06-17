@@ -12,6 +12,7 @@ rule quantify_loop_counts:
         sample_table=lambda wildcards: config.get("samples", "config/samples.tsv"),
         source=lambda wildcards: CTX.quantification_source,
         resolution=lambda wildcards: CTX.primary_resolution,
+        balanced=lambda wildcards: "true" if CTX.use_balanced_counts else "false",
         benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("diffloop/quantify_loop_counts")
@@ -43,6 +44,7 @@ else
         --sample-table {params.sample_table:q} \
         --cools {input.cools:q} \
         --resolution {params.resolution:q} \
+        --balanced {params.balanced:q} \
         --counts {output.counts:q} \
         --loop-metadata {output.loop_metadata:q} \
         --sample-metadata {output.sample_metadata:q} \
@@ -75,6 +77,7 @@ rule differential_loops:
         fdr=lambda wildcards: CTX.diff_fdr,
         lfc_cutoff=lambda wildcards: CTX.diff_lfc_cutoff,
         min_count=lambda wildcards: (config.get("diffloop", {}) or {}).get("min_count", 10),
+        design_formula=lambda wildcards: CTX.diff_design_formula,
         benchmark_dir=PATHS.benchmarks
     log:
         PATHS.log("diffloop/{comparison}")
@@ -96,6 +99,7 @@ Rscript scripts/diffloop_deseq2.R \
     --fdr {params.fdr:q} \
     --lfc-cutoff {params.lfc_cutoff:q} \
     --min-count {params.min_count:q} \
+    --design-formula {params.design_formula:q} \
     --out-table {output.table:q} \
     --out-significant {output.significant:q} \
     --out-up {output.up:q} \

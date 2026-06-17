@@ -83,6 +83,8 @@ class WorkflowPaths:
         self.valid_pairs = self.result("valid_pairs")
         self.matrix = self.result("matrix")
         self.cool = self.result("cool")
+        self.bam = self.result("bam")
+        self.peaks = self.result("peaks")
         self.loops = self.result("loops")
         self.consensus_loops = self.result("loops", "consensus")
         self.diffloop = self.result("diffloop")
@@ -145,6 +147,21 @@ class WorkflowPaths:
 
     def mcool_file(self, sample):
         return f"{self.cool}/{sample}.mcool"
+
+    def hicpro_mapped_bam(self, sample):
+        return f"{self.bam}/{sample}.hicpro.mapped.bam"
+
+    def auto_peak_narrowpeak(self, sample):
+        return f"{self.peaks}/{sample}/{sample}.auto_peaks.narrowPeak"
+
+    def auto_peak_bed(self, sample):
+        return f"{self.peaks}/{sample}/{sample}.auto_peaks.bed"
+
+    def auto_peak_log(self, sample, caller):
+        return f"{self.peaks}/{sample}/{sample}.{caller}.log"
+
+    def peak_source_table(self):
+        return f"{self.peaks}/peak_sources.tsv"
 
     def hicpro_qc_summary(self):
         return f"{self.qc}/hicpro_qc_summary.tsv"
@@ -262,6 +279,8 @@ def parse_samples(config):
         peak_bed = row.get("peak_bed", "")
         if peak_bed:
             peak_bed = resolve_path(peak_bed, raw_data_dir)
+            if validate_files and not Path(peak_bed).exists():
+                raise ValueError(f"Peak BED file does not exist for sample {sample}: {peak_bed}")
         records[sample] = {
             "sample": sample,
             "fq1": fq1,
@@ -314,13 +333,13 @@ def build_workflow_context(config):
     qc_cfg = config.get("qc", {}) or {}
     preprocessing_cfg = config.get("preprocessing", {}) or {}
     annotation_cfg = config.get("annotation", {}) or {}
+    peak_cfg = config.get("peak_calling", {}) or {}
     resolutions = [str(int(x)) for x in as_list(hicpro_cfg.get("resolutions", [10000, 25000, 50000]))]
     if not resolutions:
         raise ValueError("hicpro.resolutions must contain at least one resolution")
     primary_resolution = str(int(loop_cfg.get("resolution") or min(int(r) for r in resolutions)))
     if primary_resolution not in resolutions:
-        resolutions.append(primary_resolution)
-        resolutions = [str(int(x)) for x in sorted([int(r) for r in resolutions])]
+        raise ValueError("loop_calling.resolution must be one of hicpro.resolutions")
     enable_loops = as_bool(loop_cfg.get("enable", True), True)
     enable_diffloop = as_bool(diff_cfg.get("enable", True), True) and len(comparisons) > 0
     enable_fastp = as_bool(preprocessing_cfg.get("enable_fastp", False), False)
@@ -328,6 +347,32 @@ def build_workflow_context(config):
     enable_distance_decay = as_bool(qc_cfg.get("enable_distance_decay", True), True)
     enable_correlation = as_bool(qc_cfg.get("enable_correlation", True), True)
     enable_annotation = as_bool(annotation_cfg.get("enable", False), False)
+    enable_auto_peak = as_bool(peak_cfg.get("enable_auto_peak", True), True)
+    peak_caller = str(peak_cfg.get("caller", "macs2")).lower()
+    if peak_caller not in {"macs2", "macs3"}:
+        raise ValueError("peak_calling.caller must be macs2 or macs3")
+    loop_caller = str(loop_cfg.get("caller", "fithichip")).lower()
+    if loop_caller not in {"fithichip", "mustache", "cooltools", "precomputed"}:
+        raise ValueError("loop_calling.caller must be one of fithichip, mustache, cooltools, precomputed")
+    if loop_caller == "fithichip":
+        hic_samples = [s for s, rec in samples.items() if rec["assay"] == "hic"]
+        if hic_samples:
+            raise ValueError("loop_calling.caller=fithichip is for HiChIP. Hi-C sample(s) cannot use FitHiChIP: " + ", ".join(hic_samples))
+        missing_peak = []
+        for sample, rec in samples.items():
+            has_sample_peak = bool(rec.get("peak_bed"))
+            has_global_peak = bool(loop_cfg.get("external_peaks", ""))
+            can_auto = rec["assay"] == "hichip" and enable_auto_peak
+            if not (has_sample_peak or has_global_peak or can_auto):
+                missing_peak.append(sample)
+        if missing_peak:
+            raise ValueError(
+                "FitHiChIP requires peaks. Provide samples.tsv peak_bed, set loop_calling.external_peaks, "
+                "or enable peak_calling.enable_auto_peak for sample(s): " + ", ".join(missing_peak)
+            )
+    for sample, rec in samples.items():
+        if rec["assay"] == "hichip" and not rec.get("target"):
+            print(f"[BioFlowAI hic_hichip] WARNING: HiChIP sample {sample} has empty target.")
     bind_paths = unique_list(as_list(hicpro_cfg.get("extra_bind_paths", [])))
     for key in ["fasta", "chrom_sizes", "restriction_fragments", "bowtie2_index"]:
         value = (config.get("genome", {}) or {}).get(key)
@@ -355,14 +400,26 @@ def build_workflow_context(config):
         hicpro_template=str(hicpro_cfg.get("config_template", "config/hicpro.config.template")),
         hicpro_bind_paths=bind_paths,
         hicpro_singularity_args=str(hicpro_cfg.get("singularity_args", "")),
-        loop_caller=str(loop_cfg.get("caller", "fithichip")).lower(),
+        base_resolution=str(min(int(r) for r in resolutions)),
+        loop_caller=loop_caller,
         loop_fdr=str(loop_cfg.get("fdr", 0.01)),
         peak_mode=str(loop_cfg.get("peak_mode", "external_peak")),
+        enable_auto_peak=enable_auto_peak,
+        peak_caller=peak_caller,
+        peak_genome_size=str(peak_cfg.get("genome_size", "hs")),
+        peak_qvalue=str(peak_cfg.get("qvalue", 0.01)),
+        peak_mode_macs=str(peak_cfg.get("mode", "BAMPE")),
+        peak_extra=str(peak_cfg.get("extra", "")),
+        peak_allow_empty=as_bool(peak_cfg.get("allow_empty", False), False),
         quantification_source=str(diff_cfg.get("quantification_source", "cool")).lower(),
+        use_balanced_counts=as_bool(diff_cfg.get("use_balanced_counts", False), False),
         loop_universe_mode=str(diff_cfg.get("loop_universe", "union")),
         anchor_slop=int(diff_cfg.get("anchor_slop", 0)),
+        group_consensus_min_replicates=int(diff_cfg.get("group_consensus_min_replicates", 1)),
+        group_consensus_min_fraction=float(diff_cfg.get("group_consensus_min_fraction", 0.5)),
         diff_fdr=float(diff_cfg.get("fdr", 0.05)),
         diff_lfc_cutoff=float(diff_cfg.get("lfc_cutoff", 0.0)),
+        diff_design_formula=str(diff_cfg.get("design_formula", diff_cfg.get("design", "~ group"))),
     )
 
 
@@ -389,9 +446,52 @@ def hicpro_reads(wildcards):
 
 
 def sample_peak_bed(wildcards):
-    sample = CTX.samples[wildcards.sample]
-    configured = (config.get("loop_calling", {}) or {}).get("external_peaks", "") or sample.get("peak_bed", "")
-    return str(configured or "")
+    return sample_peak_path(wildcards.sample)
+
+
+def sample_external_peak(sample):
+    rec = CTX.samples[sample]
+    if rec.get("peak_bed"):
+        return rec["peak_bed"]
+    global_peak = (config.get("loop_calling", {}) or {}).get("external_peaks", "")
+    return str(global_peak or "")
+
+
+def needs_auto_peak(sample):
+    rec = CTX.samples[sample]
+    return bool(
+        CTX.enable_auto_peak
+        and CTX.loop_caller == "fithichip"
+        and rec["assay"] == "hichip"
+        and not sample_external_peak(sample)
+    )
+
+
+def sample_peak_path(sample):
+    external = sample_external_peak(sample)
+    if external:
+        return external
+    if needs_auto_peak(sample):
+        return PATHS.auto_peak_bed(sample)
+    return ""
+
+
+def sample_peak_source(sample):
+    rec = CTX.samples[sample]
+    if rec.get("peak_bed"):
+        return "sample_peak_bed"
+    if (config.get("loop_calling", {}) or {}).get("external_peaks", ""):
+        return "global_external_peak"
+    if needs_auto_peak(sample):
+        return "hichip_auto_peak"
+    return "none"
+
+
+def sample_peak_input(wildcards):
+    if needs_auto_peak(wildcards.sample):
+        return PATHS.auto_peak_bed(wildcards.sample)
+    peak = sample_external_peak(wildcards.sample)
+    return peak if peak else []
 
 
 def comparison_group1(wildcards):
@@ -415,6 +515,11 @@ def all_outputs(ctx):
     if ctx.enable_multiqc:
         outputs.append(PATHS.multiqc_report())
     if ctx.enable_loops:
+        auto_peak_samples = [sample for sample in ctx.sample_names if needs_auto_peak(sample)]
+        outputs.extend([PATHS.hicpro_mapped_bam(sample) for sample in auto_peak_samples])
+        outputs.extend([PATHS.auto_peak_bed(sample) for sample in auto_peak_samples])
+        outputs.extend([PATHS.auto_peak_narrowpeak(sample) for sample in auto_peak_samples])
+        outputs.append(PATHS.peak_source_table())
         outputs.extend([PATHS.sample_loops_bedpe(sample) for sample in ctx.sample_names])
         outputs.extend([PATHS.sample_loops_tsv(sample) for sample in ctx.sample_names])
         outputs.extend([PATHS.sample_anchors_bed(sample) for sample in ctx.sample_names])

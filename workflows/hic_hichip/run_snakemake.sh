@@ -10,8 +10,8 @@ if [[ -f "$SNAKEMAKE_RUNTIME_CONFIG" ]]; then
 fi
 
 SNAKEFILE="${SNAKEFILE:-$SCRIPT_DIR/Snakefile}"
-: "${SNAKEMAKE_CORES:?Set SNAKEMAKE_CORES in config/run_snakemake.env or the environment.}"
-: "${SNAKEMAKE_CONDA_PREFIX:?Set SNAKEMAKE_CONDA_PREFIX in config/run_snakemake.env or the environment.}"
+SNAKEMAKE_CORES="${SNAKEMAKE_CORES:-}"
+SNAKEMAKE_CONDA_PREFIX="${SNAKEMAKE_CONDA_PREFIX:-$SCRIPT_DIR/.snakemake/conda}"
 SNAKEMAKE_CACHE_DIR="${SNAKEMAKE_CACHE_DIR:-$SCRIPT_DIR/.snakemake/cache}"
 SNAKEMAKE_TMPDIR="${SNAKEMAKE_TMPDIR:-$SNAKEMAKE_CACHE_DIR/tmp}"
 
@@ -30,10 +30,23 @@ if [[ -n "${FITHICHIP_HOME:-}" && -z "${FITHICHIP_SCRIPT:-}" ]]; then
     export FITHICHIP_SCRIPT="$FITHICHIP_HOME/FitHiChIP_HiCPro.sh"
 fi
 
+has_cores_arg=0
+for arg in "$@"; do
+    if [[ "$arg" == "--cores" || "$arg" == "-j" || "$arg" == --cores=* || "$arg" == -j* ]]; then
+        has_cores_arg=1
+        break
+    fi
+done
+
+cores_args=()
+if [[ "$has_cores_arg" == "0" ]]; then
+    cores_args=(-j "${SNAKEMAKE_CORES:-1}")
+fi
+
 snakemake \
     -s "$SNAKEFILE" \
     --use-conda \
     --conda-prefix "$SNAKEMAKE_CONDA_PREFIX" \
-    -j "$SNAKEMAKE_CORES" \
+    "${cores_args[@]}" \
     --rerun-triggers mtime \
     "$@"

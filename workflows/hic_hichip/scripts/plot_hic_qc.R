@@ -16,19 +16,20 @@ summary <- read.delim(opt$summary, check.names=FALSE)
 samples <- strsplit(opt$samples, ",")[[1]]
 for (p in c(opt$distance_pdf, opt$distance_tsv, opt$correlation_pdf)) dir.create(dirname(p), recursive=TRUE, showWarnings=FALSE)
 
-# Placeholder distance-decay summary derived from counted valid pairs. For production, replace with cooltools expected-cis.
-df <- data.frame(sample=samples, distance_bin="all", contacts=summary$valid_pairs_counted[match(samples, summary$sample)])
+# This is intentionally a valid-pairs summary, not a formal distance-decay or
+# contact-map correlation analysis. The filenames are kept for compatibility.
+df <- data.frame(sample=samples, qc_metric="valid_pairs_counted", contacts=summary$valid_pairs_counted[match(samples, summary$sample)])
 write.table(df, opt$distance_tsv, sep="\t", quote=FALSE, row.names=FALSE)
 
 pdf(opt$distance_pdf)
-barplot(as.numeric(df$contacts), names.arg=df$sample, las=2, ylab="valid pairs", main="Valid interaction pairs")
+barplot(as.numeric(df$contacts), names.arg=df$sample, las=2, ylab="valid pairs", main="Valid pairs summary")
 dev.off()
 
 pdf(opt$correlation_pdf)
 if (length(samples) > 1 && all(!is.na(as.numeric(df$contacts)))) {
   m <- matrix(as.numeric(df$contacts), nrow=1)
   colnames(m) <- samples
-  plot.new(); text(0.5, 0.5, "Sample correlation requires per-bin contact vectors.\nThis placeholder confirms QC plotting completed.")
+  plot.new(); text(0.5, 0.5, "Formal sample correlation is not computed here.\nUse cooler-based contact vectors for production correlation QC.")
 } else {
   plot.new(); text(0.5, 0.5, "Not enough samples for correlation")
 }

@@ -88,6 +88,11 @@ if [[ ${{#candidates[@]}} -eq 0 ]]; then
     echo "ERROR: Could not find HiC-Pro allValidPairs for sample $sample under $base" | tee {log:q}
     exit 1
 fi
+if [[ ${{#candidates[@]}} -gt 1 ]]; then
+    echo "ERROR: multiple HiC-Pro allValidPairs candidates found for $sample:" | tee {log:q}
+    printf '%s\n' "${{candidates[@]}}" | tee -a {log:q}
+    exit 1
+fi
 ln -sf $(realpath "${{candidates[0]}}") {output.valid_pairs:q}
 test -s {output.valid_pairs:q}
         """
@@ -112,22 +117,48 @@ mkdir -p $(dirname {output.raw_matrix:q}) $(dirname {output.iced_matrix:q}) $(di
 base={PATHS.hicpro:q}
 sample={wildcards.sample:q}
 res={wildcards.resolution:q}
-raw_dir=$(find "$base" -path "*/hic_results/matrix/${{sample}}/raw/${{res}}" -type d | head -n 1 || true)
-iced_dir=$(find "$base" -path "*/hic_results/matrix/${{sample}}/iced/${{res}}" -type d | head -n 1 || true)
-if [[ -z "$raw_dir" ]]; then
+mapfile -t raw_dirs < <(find "$base" -path "*/hic_results/matrix/${{sample}}/raw/${{res}}" -type d | sort)
+mapfile -t iced_dirs < <(find "$base" -path "*/hic_results/matrix/${{sample}}/iced/${{res}}" -type d | sort)
+if [[ ${{#raw_dirs[@]}} -eq 0 ]]; then
     echo "ERROR: raw matrix directory not found for $sample resolution $res" | tee {log:q}
     exit 1
 fi
-if [[ -z "$iced_dir" ]]; then
+if [[ ${{#raw_dirs[@]}} -gt 1 ]]; then
+    echo "ERROR: multiple raw matrix directories found for $sample resolution $res:" | tee {log:q}
+    printf '%s\n' "${{raw_dirs[@]}}" | tee -a {log:q}
+    exit 1
+fi
+if [[ ${{#iced_dirs[@]}} -eq 0 ]]; then
     echo "ERROR: iced matrix directory not found for $sample resolution $res" | tee {log:q}
     exit 1
 fi
-raw_matrix=$(find "$raw_dir" -name "*.matrix" | head -n 1)
-raw_bins=$(find "$raw_dir" -name "*abs.bed" | head -n 1)
-iced_matrix=$(find "$iced_dir" -name "*.matrix" | head -n 1)
-iced_bins=$(find "$iced_dir" -name "*abs.bed" | head -n 1)
-if [[ -z "$iced_bins" ]]; then
+if [[ ${{#iced_dirs[@]}} -gt 1 ]]; then
+    echo "ERROR: multiple iced matrix directories found for $sample resolution $res:" | tee {log:q}
+    printf '%s\n' "${{iced_dirs[@]}}" | tee -a {log:q}
+    exit 1
+fi
+raw_dir="${{raw_dirs[0]}}"
+iced_dir="${{iced_dirs[0]}}"
+mapfile -t raw_matrices < <(find "$raw_dir" -name "*.matrix" -type f | sort)
+mapfile -t raw_bins_files < <(find "$raw_dir" -name "*abs.bed" -type f | sort)
+mapfile -t iced_matrices < <(find "$iced_dir" -name "*.matrix" -type f | sort)
+mapfile -t iced_bins_files < <(find "$iced_dir" -name "*abs.bed" -type f | sort)
+if [[ ${{#raw_matrices[@]}} -ne 1 || ${{#raw_bins_files[@]}} -ne 1 || ${{#iced_matrices[@]}} -ne 1 ]]; then
+    echo "ERROR: expected one raw matrix, one raw abs bed, and one iced matrix for $sample resolution $res" | tee {log:q}
+    printf 'raw_matrices:\n%s\nraw_bins:\n%s\niced_matrices:\n%s\n' "${{raw_matrices[*]}}" "${{raw_bins_files[*]}}" "${{iced_matrices[*]}}" | tee -a {log:q}
+    exit 1
+fi
+raw_matrix="${{raw_matrices[0]}}"
+raw_bins="${{raw_bins_files[0]}}"
+iced_matrix="${{iced_matrices[0]}}"
+if [[ ${{#iced_bins_files[@]}} -eq 0 ]]; then
     iced_bins="$raw_bins"
+elif [[ ${{#iced_bins_files[@]}} -eq 1 ]]; then
+    iced_bins="${{iced_bins_files[0]}}"
+else
+    echo "ERROR: multiple iced abs bed candidates found for $sample resolution $res:" | tee {log:q}
+    printf '%s\n' "${{iced_bins_files[@]}}" | tee -a {log:q}
+    exit 1
 fi
 if [[ -z "$raw_matrix" || -z "$raw_bins" || -z "$iced_matrix" || -z "$iced_bins" ]]; then
     echo "ERROR: matrix files are incomplete for $sample resolution $res" | tee {log:q}

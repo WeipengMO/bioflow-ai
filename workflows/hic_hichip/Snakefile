@@ -13,6 +13,7 @@ print_workflow_summary(CTX)
 OUTDIR = PATHS.outdir
 ENV = "../envs/hic_hichip.yml"
 LOOP_ENV = "../envs/fithichip.yml" if CTX.loop_caller == "fithichip" else "../envs/loops.yml"
+PEAK_ENV = "../envs/peaks.yml"
 DIFF_ENV = "../envs/diffloop.yml"
 
 include:
@@ -26,6 +27,9 @@ include:
 
 include:
     "rules/qc.smk"
+
+include:
+    "rules/peaks.smk"
 
 include:
     "rules/loops.smk"

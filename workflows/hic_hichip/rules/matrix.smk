@@ -36,7 +36,7 @@ test -s {output.cool:q}
 
 rule make_mcool:
     input:
-        cool=lambda wildcards: PATHS.cool_file(wildcards.sample, CTX.primary_resolution)
+        cool=lambda wildcards: PATHS.cool_file(wildcards.sample, CTX.base_resolution)
     output:
         mcool=PATHS.mcool_file("{sample}")
     wildcard_constraints:

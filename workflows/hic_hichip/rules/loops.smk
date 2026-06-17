@@ -2,7 +2,8 @@ rule call_loops:
     input:
         valid_pairs=PATHS.sample_valid_pairs("{sample}"),
         cool=lambda wildcards: PATHS.cool_file(wildcards.sample, CTX.primary_resolution),
-        mcool=PATHS.mcool_file("{sample}")
+        mcool=PATHS.mcool_file("{sample}"),
+        peaks=sample_peak_input
     output:
         bedpe=PATHS.sample_loops_bedpe("{sample}"),
         tsv=PATHS.sample_loops_tsv("{sample}"),
@@ -13,7 +14,8 @@ rule call_loops:
         sample="{sample}",
         assay=lambda wildcards: CTX.samples[wildcards.sample]["assay"],
         target=lambda wildcards: CTX.samples[wildcards.sample].get("target", ""),
-        peaks=sample_peak_bed,
+        peaks=lambda wildcards: sample_peak_path(wildcards.sample),
+        peak_source=lambda wildcards: sample_peak_source(wildcards.sample),
         caller=lambda wildcards: CTX.loop_caller,
         resolution=lambda wildcards: CTX.primary_resolution,
         fdr=lambda wildcards: CTX.loop_fdr,
@@ -43,6 +45,7 @@ python scripts/call_loops.py \
     --cool {input.cool:q} \
     --mcool {input.mcool:q} \
     --peaks "{params.peaks}" \
+    --peak-source {params.peak_source:q} \
     --threads {threads} \
     --bedpe {output.bedpe:q} \
     --tsv {output.tsv:q} \
@@ -64,7 +67,9 @@ rule make_loop_universe:
         samples=",".join(CTX.sample_names),
         sample_table=lambda wildcards: config.get("samples", "config/samples.tsv"),
         mode=lambda wildcards: CTX.loop_universe_mode,
-        anchor_slop=lambda wildcards: CTX.anchor_slop
+        anchor_slop=lambda wildcards: CTX.anchor_slop,
+        group_consensus_min_replicates=lambda wildcards: CTX.group_consensus_min_replicates,
+        group_consensus_min_fraction=lambda wildcards: CTX.group_consensus_min_fraction
     log:
         PATHS.log("loops/make_loop_universe")
     conda:
@@ -79,6 +84,8 @@ python scripts/make_loop_universe.py \
     --sample-table {params.sample_table:q} \
     --mode {params.mode:q} \
     --anchor-slop {params.anchor_slop:q} \
+    --group-consensus-min-replicates {params.group_consensus_min_replicates:q} \
+    --group-consensus-min-fraction {params.group_consensus_min_fraction:q} \
     --universe {output.universe:q} \
     --group-consensus {output.group_consensus:q} \
     --annotation {output.annotation:q} \

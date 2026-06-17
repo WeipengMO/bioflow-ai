@@ -34,9 +34,20 @@ hicpro:
   singularity_args: ""
   extra_bind_paths: []
   extra: ""
+  allow_multiple_hicpro_candidates: false
 
 matrix:
   balance: true
+
+peak_calling:
+  enable_auto_peak: true
+  caller: "macs2"          # macs2 or macs3
+  genome_size: "hs"
+  qvalue: 0.01
+  mode: "BAMPE"
+  extra: ""
+  use_hicpro_bam: true
+  allow_empty: false
 
 loop_calling:
   enable: true
@@ -65,20 +76,30 @@ annotation:
   promoters: ""
   enhancers: ""
   gtf: ""
+  promoter_upstream: 2000
+  promoter_downstream: 2000
 
 diffloop:
   enable: true
   method: "deseq2"
   quantification_source: "cool"   # cool or validpairs
+  use_balanced_counts: false
   loop_universe: "union"          # union, intersection, group_consensus
   anchor_slop: 0
+  group_consensus_min_replicates: 1
+  group_consensus_min_fraction: 0.5
   min_count: 10
   fdr: 0.05
   lfc_cutoff: 0.0
+  design_formula: "~ group"
+  paired: false
+  batch_column: ""
+  patient_column: ""
 
 threads:
   fastp: 8
   hicpro: 32
   matrix_convert: 4
+  peak_calling: 4
   loop_calling: 16
   diffloop: 8

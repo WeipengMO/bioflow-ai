@@ -45,6 +45,7 @@ def parse_args():
     p.add_argument("--cool", required=True)
     p.add_argument("--mcool", required=True)
     p.add_argument("--peaks", default="")
+    p.add_argument("--peak-source", default="none")
     p.add_argument("--threads", type=int, default=8)
     p.add_argument("--bedpe", required=True)
     p.add_argument("--tsv", required=True)
@@ -57,13 +58,50 @@ def run(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 
-def normalize_loop_table(path: Path, sample: str, caller: str, qvalue_default="NA") -> pd.DataFrame:
+def looks_like_header(fields):
+    normalized = [str(x).strip().lower() for x in fields]
+    if len(fields) >= 6:
+        numeric_positions = [1, 2, 4, 5]
+        numeric_like = 0
+        for pos in numeric_positions:
+            try:
+                int(float(fields[pos]))
+                numeric_like += 1
+            except Exception:
+                pass
+        if numeric_like >= 3:
+            return False
+    return (
+        {"chrom1", "start1", "end1", "chrom2", "start2", "end2"}.issubset(set(normalized))
+        or "bin1_start" in normalized
+    )
+
+
+def read_loop_table(path: Path) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         raise ValueError(f"Loop caller did not produce a non-empty loop file: {path}")
-    try:
-        df = pd.read_csv(path, sep="\t")
-    except Exception:
-        df = pd.read_csv(path, sep="\t", header=None)
+    with path.open(errors="ignore") as handle:
+        first = ""
+        for line in handle:
+            if line.strip() and not line.startswith("#"):
+                first = line.rstrip("\n")
+                break
+    fields = first.split("\t") if first else []
+    if looks_like_header(fields):
+        return pd.read_csv(path, sep="\t", comment="#")
+    return pd.read_csv(path, sep="\t", comment="#", header=None)
+
+
+def empty_loop_table(sample, caller, peak_source):
+    return pd.DataFrame(
+        columns=[*BEDPE_COLUMNS, "loop_id", "score", "qvalue", "sample", "caller", "peak_source"]
+    )
+
+
+def normalize_loop_table(path: Path, sample: str, caller: str, qvalue_default="NA", peak_source="none") -> pd.DataFrame:
+    df = read_loop_table(path)
+    if df.empty:
+        return empty_loop_table(sample, caller, peak_source)
     lower = {str(c).lower(): c for c in df.columns}
     def col(*names):
         for name in names:
@@ -98,7 +136,8 @@ def normalize_loop_table(path: Path, sample: str, caller: str, qvalue_default="N
     out["qvalue"] = df[qcol].values[:len(out)] if qcol else qvalue_default
     out["sample"] = sample
     out["caller"] = caller
-    return out[[*BEDPE_COLUMNS, "loop_id", "score", "qvalue", "sample", "caller"]]
+    out["peak_source"] = peak_source
+    return out[[*BEDPE_COLUMNS, "loop_id", "score", "qvalue", "sample", "caller", "peak_source"]]
 
 
 def write_standard_outputs(df: pd.DataFrame, bedpe: Path, tsv: Path, anchors: Path):
@@ -184,23 +223,54 @@ def resolve_fithichip_script(loop_cfg):
 
 def call_fithichip(args, loop_cfg, tmpdir):
     script = resolve_fithichip_script(loop_cfg)
+    cfg = yaml.safe_load(Path(args.config).read_text()) or {}
+    peak_cfg = cfg.get("peak_calling", {}) or {}
+    allow_empty = as_bool(peak_cfg.get("allow_empty", False), False)
     if not args.peaks:
         raise SystemExit(
             "FitHiChIP requires peaks for the default peak-aware mode. "
             "Provide peak_bed in samples.tsv or loop_calling.external_peaks in config.yml."
         )
+    peak_path = Path(args.peaks)
+    if not peak_path.exists():
+        raise SystemExit(f"FitHiChIP peak file does not exist: {peak_path}")
+    if peak_path.stat().st_size == 0:
+        if allow_empty:
+            out = Path(tmpdir) / "empty_fithichip_loops.tsv"
+            print("[call_loops] WARNING: peak file is empty and peak_calling.allow_empty=true; writing empty loops.")
+            pd.DataFrame(columns=BEDPE_COLUMNS).to_csv(out, sep="\t", index=False)
+            return out
+        raise SystemExit(f"FitHiChIP peak file is empty: {peak_path}")
     cfg_path = Path(tmpdir) / f"{args.sample}.fithichip.config"
     outdir = Path(tmpdir) / "fithichip_out"
+    genome = cfg.get("genome", {}) or {}
+    int_type = str(loop_cfg.get("int_type", 3))
+    bias_type = str(loop_cfg.get("bias_type", 1))
+    use_p2p = str(loop_cfg.get("use_p2p_background", 0))
+    peak_mode = str(loop_cfg.get("peak_mode", "peak_to_all")).lower()
+    if peak_mode in {"peak_to_peak", "p2p"}:
+        int_type = "1"
+    elif peak_mode in {"peak_to_nonpeak", "p2np"}:
+        int_type = "2"
+    elif peak_mode in {"all_to_all", "all2all"}:
+        int_type = "4"
+    elif peak_mode in {"everything", "all"}:
+        int_type = "5"
     cfg_path.write_text("\n".join([
         f"ValidPairs={Path(args.valid_pairs).resolve()}",
-        f"PeakFile={Path(args.peaks).resolve()}",
+        f"PeakFile={peak_path.resolve()}",
         f"OutDir={outdir.resolve()}",
+        f"ChrSizeFile={Path(str(genome.get('chrom_sizes', ''))).resolve()}",
         f"PREFIX={args.sample}",
-        f"Resolution={args.resolution}",
-        f"FDRThr={args.fdr}",
-        "UseP2PBackgrnd=0",
-        "BiasType=Coverage",
-        "MergeInt=1",
+        f"BINSIZE={args.resolution}",
+        f"QVALUE={args.fdr}",
+        f"LowDistThr={loop_cfg.get('min_dist', 20000)}",
+        f"UppDistThr={loop_cfg.get('max_dist', 2000000)}",
+        f"IntType={int_type}",
+        f"UseP2PBackgrnd={use_p2p}",
+        f"BiasType={bias_type}",
+        f"MergeInt={int(loop_cfg.get('merge_interactions', 1))}",
+        "OverWrite=1",
         "" ]))
     run(["bash", script, "-C", str(cfg_path)])
     candidates = list(outdir.glob("**/*FitHiChIP*.interactions_FitHiC_Q*.bed")) + list(outdir.glob("**/*loops*.bedpe")) + list(outdir.glob("**/*.bedpe"))
@@ -223,9 +293,13 @@ def main():
             loop_file = call_cooltools(args, loop_cfg, tmpdir)
         elif args.caller == "fithichip":
             loop_file = call_fithichip(args, loop_cfg, tmpdir)
+        elif args.caller == "precomputed":
+            if not precomputed:
+                raise SystemExit("loop_calling.caller=precomputed requires loop_calling.precomputed_loops.")
+            loop_file = precomputed
         else:
             raise SystemExit(f"Unsupported loop caller: {args.caller}")
-        df = normalize_loop_table(Path(loop_file), args.sample, args.caller, qvalue_default=args.fdr)
+        df = normalize_loop_table(Path(loop_file), args.sample, args.caller, qvalue_default=args.fdr, peak_source=args.peak_source)
         write_standard_outputs(df, Path(args.bedpe), Path(args.tsv), Path(args.anchors))
 
 

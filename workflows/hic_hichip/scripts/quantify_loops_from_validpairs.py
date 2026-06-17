@@ -29,9 +29,9 @@ def opener(path):
 def build_index(loops):
     by_chrom = {}
     for idx, row in loops.iterrows():
-        for side in [1]:
-            chrom = row["chrom1"]
-            by_chrom.setdefault(chrom, []).append((int(row["start1"]), int(row["end1"]), idx))
+        for side in [1, 2]:
+            chrom = row[f"chrom{side}"]
+            by_chrom.setdefault(chrom, []).append((int(row[f"start{side}"]), int(row[f"end{side}"]), idx, side))
     for chrom in by_chrom:
         by_chrom[chrom].sort()
     return by_chrom
@@ -44,7 +44,7 @@ def candidate_anchor_hits(index, chrom, pos):
     i = bisect.bisect_right(items, (pos, 10**18, 10**18))
     j = i - 1
     while j >= 0 and items[j][0] <= pos:
-        start, end, idx = items[j]
+        start, end, idx, side = items[j]
         if end > pos:
             hits.append(idx)
         if start < pos - 1_000_000:
@@ -65,6 +65,7 @@ def count_validpairs(path, loops):
                 continue
             # HiC-Pro allValidPairs: readID chr1 pos1 strand1 chr2 pos2 strand2 ...
             chrom1, pos1, chrom2, pos2 = parts[1], int(parts[2]), parts[4], int(parts[5])
+            matched = set()
             for idx in candidate_anchor_hits(index, chrom1, pos1):
                 row = loops.iloc[idx]
                 ok = (
@@ -73,7 +74,18 @@ def count_validpairs(path, loops):
                     row.chrom1 == chrom2 and int(row.start1) <= pos2 < int(row.end1) and row.chrom2 == chrom1 and int(row.start2) <= pos1 < int(row.end2)
                 )
                 if ok:
-                    counts[idx] += 1
+                    matched.add(idx)
+            for idx in candidate_anchor_hits(index, chrom2, pos2):
+                row = loops.iloc[idx]
+                ok = (
+                    row.chrom1 == chrom1 and int(row.start1) <= pos1 < int(row.end1) and row.chrom2 == chrom2 and int(row.start2) <= pos2 < int(row.end2)
+                ) or (
+                    row.chrom2 == chrom1 and int(row.start2) <= pos1 < int(row.end2) and row.chrom1 == chrom2 and int(row.start1) <= pos2 < int(row.end1)
+                )
+                if ok:
+                    matched.add(idx)
+            for idx in matched:
+                counts[idx] += 1
     return counts
 
 
