@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect human/spike-in normalization metrics for CUT&Tag R-loop samples."""
+"""Collect generic spike-in normalization metrics for CUT&Tag R-loop samples."""
 
 from __future__ import annotations
 
@@ -36,6 +36,10 @@ def samtools_count(args: list[str]) -> int:
 
 def mapped_reads(bam: str) -> int:
     return samtools_count(["-F", "4", bam])
+
+
+def proper_pair_fragments(bam: str) -> int:
+    return samtools_count(["-f", "2", "-F", "3852", bam]) // 2
 
 
 def unique_fragments(bam: str, mode: str) -> int:
@@ -88,7 +92,15 @@ def format_float(value: float) -> str:
 
 def write_warnings(path: str, text_path: str, rows: list[dict[str, str]]) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    fields = ["sample", "ecoli_mapped_reads", "ecoli_fraction", "threshold", "severity", "message"]
+    fields = [
+        "sample",
+        "spikein_genome",
+        "spikein_count",
+        "spikein_fraction",
+        "threshold",
+        "severity",
+        "message",
+    ]
     with open(path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=fields)
         writer.writeheader()
@@ -98,7 +110,8 @@ def write_warnings(path: str, text_path: str, rows: list[dict[str, str]]) -> Non
             for row in rows:
                 handle.write(
                     "{severity}: {sample}: {message} "
-                    "(ecoli_mapped_reads={ecoli_mapped_reads}, ecoli_fraction={ecoli_fraction}, threshold={threshold})\n".format(
+                    "(spikein_genome={spikein_genome}, spikein_count={spikein_count}, "
+                    "spikein_fraction={spikein_fraction}, threshold={threshold})\n".format(
                         **row
                     )
                 )
@@ -114,9 +127,11 @@ def main() -> None:
     parser.add_argument("--spikein-groups", required=True)
     parser.add_argument("--human-bams", nargs="+", required=True)
     parser.add_argument("--human-unique-bams", nargs="+", required=True)
-    parser.add_argument("--ecoli-bams", nargs="+", required=True)
-    parser.add_argument("--min-mapped-reads", type=int, default=1000)
-    parser.add_argument("--min-fraction", type=float, default=0.001)
+    parser.add_argument("--spikein-bams", nargs="+", required=True)
+    parser.add_argument("--spikein-genome", default="ecoli")
+    parser.add_argument("--spikein-counting-mode", choices=["mapped_reads", "proper_pair_fragments"], default="mapped_reads")
+    parser.add_argument("--min-spikein-reads", type=int, default=1000)
+    parser.add_argument("--warn-low-fraction", type=float, default=0.001)
     parser.add_argument("--output", required=True)
     parser.add_argument("--warning-tsv", required=True)
     parser.add_argument("--warning-txt", required=True)
@@ -126,7 +141,7 @@ def main() -> None:
     for label, values in {
         "human-bams": args.human_bams,
         "human-unique-bams": args.human_unique_bams,
-        "ecoli-bams": args.ecoli_bams,
+        "spikein-bams": args.spikein_bams,
     }.items():
         if len(values) != len(samples):
             raise ValueError(f"Expected {len(samples)} {label} values, got {len(values)}")
@@ -141,32 +156,35 @@ def main() -> None:
 
     raw_rows = []
     warnings = []
-    for sample, human_bam, human_unique_bam, ecoli_bam in zip(
-        samples, args.human_bams, args.human_unique_bams, args.ecoli_bams
+    for sample, human_bam, human_unique_bam, spikein_bam in zip(
+        samples, args.human_bams, args.human_unique_bams, args.spikein_bams
     ):
         total_reads = count_fastq_reads(fastqs[sample])
         human_mapped = mapped_reads(human_bam)
         human_unique = unique_fragments(human_unique_bam, args.mode)
-        ecoli_mapped = mapped_reads(ecoli_bam)
-        ecoli_fraction = ecoli_mapped / total_reads if total_reads else 0.0
+        spikein_mapped = mapped_reads(spikein_bam)
+        spikein_proper_pairs = proper_pair_fragments(spikein_bam) if args.mode == "pe" else 0
+        spikein_count = spikein_proper_pairs if args.spikein_counting_mode == "proper_pair_fragments" and args.mode == "pe" else spikein_mapped
+        spikein_fraction = spikein_mapped / total_reads if total_reads else 0.0
         group_info = spikein_groups[sample]
 
         warning_level = "ok"
         warning_message = ""
-        if ecoli_mapped == 0:
+        if spikein_count == 0:
             warning_level = "error"
-            warning_message = "E. coli spike-in mapped reads are 0; spike-in scaling is invalid."
-        elif ecoli_mapped < args.min_mapped_reads or ecoli_fraction < args.min_fraction:
+            warning_message = "Spike-in count is 0; spike-in scaling is invalid."
+        elif spikein_count < args.min_spikein_reads or spikein_fraction < args.warn_low_fraction:
             warning_level = "warning"
-            warning_message = "E. coli spike-in support is below the configured count or fraction threshold."
+            warning_message = "Spike-in support is below the configured count or fraction threshold."
 
         if warning_level != "ok":
             warnings.append(
                 {
                     "sample": sample,
-                    "ecoli_mapped_reads": str(ecoli_mapped),
-                    "ecoli_fraction": format_float(ecoli_fraction),
-                    "threshold": f"min_mapped_reads={args.min_mapped_reads};min_fraction={args.min_fraction}",
+                    "spikein_genome": args.spikein_genome,
+                    "spikein_count": str(spikein_count),
+                    "spikein_fraction": format_float(spikein_fraction),
+                    "threshold": f"min_spikein_reads={args.min_spikein_reads};warn_low_fraction={args.warn_low_fraction}",
                     "severity": warning_level,
                     "message": warning_message,
                 }
@@ -178,21 +196,21 @@ def main() -> None:
                 "human_total_reads": total_reads,
                 "human_mapped_reads": human_mapped,
                 "human_unique_fragments": human_unique,
-                "ecoli_total_reads": total_reads,
-                "ecoli_mapped_reads": ecoli_mapped,
-                "ecoli_unique_fragments": "NA",
-                "ecoli_fraction": format_float(ecoli_fraction),
+                "spikein_genome": args.spikein_genome,
+                "spikein_mapped_reads": spikein_mapped,
+                "spikein_proper_pair_fragments": spikein_proper_pairs if args.mode == "pe" else "NA",
+                "spikein_count": spikein_count,
+                "spikein_fraction": format_float(spikein_fraction),
+                "spikein_counting_mode": args.spikein_counting_mode,
                 "spikein_group": group_info["spikein_group"],
                 "spikein_reference_sample": group_info["spikein_reference_sample"],
-                "spikein_reference_ecoli_mapped_reads": "NA",
+                "spikein_reference_count": "NA",
                 "spikein_reference_human_unique_fragments": "NA",
                 "spikein_raw_scale_factor": "NA",
                 "spikein_unit_scale_factor": "NA",
                 "spikein_scale_factor": "NA",
-                "scale_method": "spikein",
-                "warning_level": warning_level,
-                "warning_message": warning_message
-                or "E. coli unique fragments are not reported because spike-in BAMs are not duplicate-marked; scaling uses ecoli_mapped_reads.",
+                "spikein_warning": warning_level if warning_level != "ok" else "",
+                "warning_message": warning_message,
             }
         )
 
@@ -203,20 +221,21 @@ def main() -> None:
         reference = rows_by_sample.get(reference_sample)
         if reference is None:
             raise ValueError(f"Spike-in reference sample is not declared: {reference_sample}")
-        reference_count = int(reference["ecoli_mapped_reads"])
+        reference_count = int(reference["spikein_count"])
         reference_unique = int(reference["human_unique_fragments"])
-        row["spikein_reference_ecoli_mapped_reads"] = reference_count
+        row["spikein_reference_count"] = reference_count
         row["spikein_reference_human_unique_fragments"] = reference_unique
-        if reference_count <= 0 and (reference_sample, "ecoli") not in reported_reference_errors:
-            reported_reference_errors.add((reference_sample, "ecoli"))
+        if reference_count <= 0 and (reference_sample, "spikein") not in reported_reference_errors:
+            reported_reference_errors.add((reference_sample, "spikein"))
             warnings.append(
                 {
                     "sample": reference_sample,
-                    "ecoli_mapped_reads": str(reference_count),
-                    "ecoli_fraction": str(reference["ecoli_fraction"]),
-                    "threshold": "reference_ecoli_mapped_reads>0",
+                    "spikein_genome": args.spikein_genome,
+                    "spikein_count": str(reference_count),
+                    "spikein_fraction": str(reference["spikein_fraction"]),
+                    "threshold": "reference_spikein_count>0",
                     "severity": "error",
-                    "message": "Spike-in reference sample has no usable E. coli reads.",
+                    "message": "Spike-in reference sample has no usable spike-in reads/fragments.",
                 }
             )
         if reference_unique <= 0 and (reference_sample, "human_unique") not in reported_reference_errors:
@@ -224,14 +243,15 @@ def main() -> None:
             warnings.append(
                 {
                     "sample": reference_sample,
-                    "ecoli_mapped_reads": str(reference_count),
-                    "ecoli_fraction": str(reference["ecoli_fraction"]),
+                    "spikein_genome": args.spikein_genome,
+                    "spikein_count": str(reference_count),
+                    "spikein_fraction": str(reference["spikein_fraction"]),
                     "threshold": "reference_human_unique_fragments>0",
                     "severity": "error",
                     "message": "Spike-in reference sample has no usable human unique fragments for unit scaling.",
                 }
             )
-        count = int(row["ecoli_mapped_reads"])
+        count = int(row["spikein_count"])
         if count > 0 and reference_count > 0 and reference_unique > 0:
             raw_scale = reference_count / count
             unit_scale = 1_000_000 / reference_unique
@@ -245,19 +265,20 @@ def main() -> None:
         "human_total_reads",
         "human_mapped_reads",
         "human_unique_fragments",
-        "ecoli_total_reads",
-        "ecoli_mapped_reads",
-        "ecoli_unique_fragments",
-        "ecoli_fraction",
+        "spikein_genome",
+        "spikein_mapped_reads",
+        "spikein_proper_pair_fragments",
+        "spikein_count",
+        "spikein_fraction",
+        "spikein_counting_mode",
         "spikein_group",
         "spikein_reference_sample",
-        "spikein_reference_ecoli_mapped_reads",
+        "spikein_reference_count",
         "spikein_reference_human_unique_fragments",
         "spikein_raw_scale_factor",
         "spikein_unit_scale_factor",
         "spikein_scale_factor",
-        "scale_method",
-        "warning_level",
+        "spikein_warning",
         "warning_message",
     ]
     with open(args.output, "w", newline="") as handle:

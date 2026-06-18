@@ -2,18 +2,18 @@
 #
 # Each FASTQ sample is listed once.
 # role is one of: treatment, control, rnaseh_control.
-# group names the spike-in normalization group for one treatment/RNaseH pair.
+# group names biological replicate groups used for consensus peaks and RNaseH statistics.
 # control points from a treatment to a MACS3 background control.
 # rnaseh_control points from a treatment to the matched RNase H-treated control.
 
 WT_CutTag_RLoop_rep1:
   role: treatment
-  group: WT_CutTag_RLoop_rep1
+  group: WT
   control: WT_Input_rep1
   rnaseh_control: WT_RNaseH_rep1
 WT_CutTag_RLoop_rep2:
   role: treatment
-  group: WT_CutTag_RLoop_rep2
+  group: WT
   control: WT_Input_rep2
   rnaseh_control: WT_RNaseH_rep2
 WT_Input_rep1:
@@ -26,12 +26,12 @@ WT_RNaseH_rep2:
   role: rnaseh_control
 KO_CutTag_RLoop_rep1:
   role: treatment
-  group: KO_CutTag_RLoop_rep1
+  group: KO
   control: KO_Input_rep1
   rnaseh_control: KO_RNaseH_rep1
 KO_CutTag_RLoop_rep2:
   role: treatment
-  group: KO_CutTag_RLoop_rep2
+  group: KO
   control: KO_Input_rep2
   rnaseh_control: KO_RNaseH_rep2
 KO_Input_rep1:

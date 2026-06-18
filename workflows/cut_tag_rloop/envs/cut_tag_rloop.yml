@@ -11,8 +11,13 @@ dependencies:
   - bowtie2
   - samtools
   - bedtools
+  - subread
   - picard
   - macs3
   - deeptools
   - pybigwig
+  - numpy
+  - matplotlib
+  - pytest
+  - bioconductor-deseq2
   - multiqc

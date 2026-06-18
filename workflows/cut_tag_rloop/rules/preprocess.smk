@@ -339,7 +339,7 @@ if CTX.has_spikein:
         wildcard_constraints:
             sample=SAMPLE_PATTERN
         params:
-            genome=lambda wildcards: config["spikein_genome"],
+            genome=lambda wildcards: CTX.spikein_index,
             reads_arg=bowtie2_reads_arg,
             extra=lambda wildcards: config.get("bowtie2_extra", "--very-sensitive")
         log:
@@ -370,7 +370,7 @@ test -s {output.bai:q}
         input:
             human_bams=expand(PATHS.signal_bam("{sample}"), sample=SAMPLES),
             human_unique_bams=expand(PATHS.filtered_bam("{sample}"), sample=SAMPLES),
-            ecoli_bams=expand(PATHS.spikein_bam("{sample}"), sample=SAMPLES)
+            spikein_bams=expand(PATHS.spikein_bam("{sample}"), sample=SAMPLES)
         output:
             metrics=PATHS.normalization_metrics(),
             warning_tsv=PATHS.spikein_warning_tsv(),
@@ -381,6 +381,8 @@ test -s {output.bai:q}
             mode=lambda wildcards: MODE,
             fastq_lines=lambda wildcards: fastq_metrics_lines(),
             spikein_group_lines=lambda wildcards: spikein_group_lines(),
+            spikein_genome=lambda wildcards: CTX.spikein_genome,
+            spikein_counting_mode=lambda wildcards: CTX.spikein_counting_mode,
             min_mapped=lambda wildcards: CTX.spikein_min_mapped_reads,
             min_fraction=lambda wildcards: CTX.spikein_min_fraction
         log:
@@ -405,9 +407,11 @@ python {params.script:q} \
     --spikein-groups "$groups" \
     --human-bams {input.human_bams:q} \
     --human-unique-bams {input.human_unique_bams:q} \
-    --ecoli-bams {input.ecoli_bams:q} \
-    --min-mapped-reads {params.min_mapped} \
-    --min-fraction {params.min_fraction} \
+    --spikein-bams {input.spikein_bams:q} \
+    --spikein-genome {params.spikein_genome:q} \
+    --spikein-counting-mode {params.spikein_counting_mode:q} \
+    --min-spikein-reads {params.min_mapped} \
+    --warn-low-fraction {params.min_fraction} \
     --output {output.metrics:q} \
     --warning-tsv {output.warning_tsv:q} \
     --warning-txt {output.warning_txt:q} \

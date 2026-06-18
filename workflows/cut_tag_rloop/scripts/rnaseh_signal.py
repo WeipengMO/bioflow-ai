@@ -45,9 +45,11 @@ def mean_signal(bw: pyBigWig.pyBigWig, chrom: str, start: int, end: int) -> floa
 
 
 def safe_ratio(treatment: float, rnaseh: float) -> float:
-    if rnaseh == 0:
-        return math.inf if treatment > 0 else 0.0
-    return treatment / rnaseh
+    raise RuntimeError("safe_ratio requires an explicit pseudocount; use ratio_with_pseudocount.")
+
+
+def ratio_with_pseudocount(treatment: float, rnaseh: float, pseudocount: float) -> float:
+    return (treatment + pseudocount) / (rnaseh + pseudocount)
 
 
 def format_float(value: float) -> str:
@@ -71,8 +73,11 @@ def write_summary(path: str, sample: str, rnaseh_sample: str, peak_count: int, s
         ("rnaseh_sensitive_region_count", sensitive_count),
         ("fraction_sensitive", f"{sensitive_fraction:.6f}"),
         ("scale_method", args.scale_method),
+        ("interpretation", "exploratory_ratio_not_replicate_aware"),
+        ("pseudocount", args.pseudocount),
         ("min_fold_change", args.min_fold_change),
         ("min_treatment_signal", args.min_treatment_signal),
+        ("min_abs_signal_diff", args.min_abs_signal_diff),
     ]
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
@@ -92,6 +97,8 @@ def main() -> None:
     parser.add_argument("--summary", required=True)
     parser.add_argument("--min-fold-change", type=float, default=2.0)
     parser.add_argument("--min-treatment-signal", type=float, default=0.0)
+    parser.add_argument("--min-abs-signal-diff", type=float, default=0.0)
+    parser.add_argument("--pseudocount", type=float, default=0.1)
     parser.add_argument("--scale-method", required=True)
     args = parser.parse_args()
 
@@ -118,6 +125,8 @@ def main() -> None:
         "rnaseh_signal",
         "signal_ratio",
         "signal_difference",
+        "pseudocount",
+        "is_exploratory",
         "classification",
         "scale_method",
     ]
@@ -131,14 +140,15 @@ def main() -> None:
                 end = int(end_s)
                 treatment_signal = mean_signal(treatment_bw, chrom, start, end)
                 rnaseh_signal = mean_signal(rnaseh_bw, chrom, start, end)
-                ratio = safe_ratio(treatment_signal, rnaseh_signal)
+                ratio = ratio_with_pseudocount(treatment_signal, rnaseh_signal, args.pseudocount)
                 diff = treatment_signal - rnaseh_signal
                 sensitive = (
                     treatment_signal > rnaseh_signal
                     and treatment_signal >= args.min_treatment_signal
                     and ratio >= args.min_fold_change
+                    and diff >= args.min_abs_signal_diff
                 )
-                classification = "rnaseh_sensitive" if sensitive else "not_sensitive"
+                classification = "exploratory_rnaseh_sensitive_ratio" if sensitive else "not_sensitive"
                 name = peak_name(peak, index)
                 writer.writerow(
                     {
@@ -150,6 +160,8 @@ def main() -> None:
                         "rnaseh_signal": format_float(rnaseh_signal),
                         "signal_ratio": format_float(ratio),
                         "signal_difference": format_float(diff),
+                        "pseudocount": format_float(args.pseudocount),
+                        "is_exploratory": "true",
                         "classification": classification,
                         "scale_method": args.scale_method,
                     }
@@ -168,6 +180,7 @@ def main() -> None:
                                 format_float(treatment_signal),
                                 format_float(rnaseh_signal),
                                 format_float(ratio),
+                                "exploratory_ratio",
                             ]
                         )
                         + "\n"

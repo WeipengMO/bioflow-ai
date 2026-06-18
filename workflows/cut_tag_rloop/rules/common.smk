@@ -13,6 +13,8 @@ PAIRED_FASTQ_RE = re.compile(
 )
 ALLOWED_ROLES = {"treatment", "control", "rnaseh_control"}
 ALLOWED_SCALE_METHODS = {"CPM", "spikein"}
+ALLOWED_SPIKEIN_MODES = {"mapped_reads", "proper_pair_fragments"}
+ALLOWED_RNASEH_MODES = {"ratio", "deseq2", "both"}
 
 
 class WorkflowPaths:
@@ -29,13 +31,13 @@ class WorkflowPaths:
         self.frip_qc = self.result("qc", "frip")
         self.bigwig_qc = self.result("qc", "bigwig")
         self.normalization_qc = self.result("qc", "normalization")
-        self.rnaseh_sensitive_qc = self.result("qc", "rnaseh_sensitive")
+        self.rnaseh_qc = self.result("qc")
         self.bigwig = self.result("bigwig")
         self.peaks = self.result("peaks")
-        self.rnaseh_sensitive = self.result("rnaseh_sensitive")
+        self.rnaseh = self.result("rnaseh")
         self.intersect_peaks = self.result("intersect_peaks")
         self.consensus_peaks = self.result("consensus_peaks")
-        self.rnaseh_sensitive_consensus = self.result("rnaseh_sensitive_consensus")
+        self.counts = self.result("counts")
         self.reports = self.result("reports")
         self.logs = self.result("logs")
 
@@ -99,10 +101,10 @@ class WorkflowPaths:
         return self.filtered_bai(sample)
 
     def spikein_bam(self, sample):
-        return f"{self.aligned_data}/{sample}.ecoli_spikein.sorted.bam"
+        return f"{self.aligned_data}/{sample}.spikein.sorted.bam"
 
     def spikein_bai(self, sample):
-        return f"{self.aligned_data}/{sample}.ecoli_spikein.sorted.bam.bai"
+        return f"{self.aligned_data}/{sample}.spikein.sorted.bam.bai"
 
     def fastp_html(self, sample):
         return f"{self.fastp_qc}/{sample}.html"
@@ -129,7 +131,7 @@ class WorkflowPaths:
         return f"{self.bigwig_qc}/{sample}.bigwig_header.tsv"
 
     def normalization_metrics(self):
-        return f"{self.normalization_qc}/normalization_metrics.tsv"
+        return f"{self.normalization_qc}/spikein_summary.tsv"
 
     def spikein_warning_tsv(self):
         return self.warning("cut_tag_rloop_spikein.warning.tsv")
@@ -141,14 +143,41 @@ class WorkflowPaths:
         suffix = "narrowPeak" if CTX.peak_type == "narrow" else "broadPeak"
         return f"{self.peaks}/{sample}.cut_tag_rloop_peaks.{suffix}"
 
-    def rnaseh_sensitive_signal_table(self, method, sample):
-        return f"{self.rnaseh_sensitive}/{method}/{sample}.rnaseh_sensitive_signal.tsv"
+    def peak_universe(self):
+        return f"{self.counts}/peak_universe.bed"
 
-    def rnaseh_sensitive_regions(self, method, sample):
-        return f"{self.rnaseh_sensitive}/{method}/{sample}.rnaseh_sensitive_regions.bed"
+    def peak_counts_raw(self):
+        return f"{self.counts}/peak_counts.raw.tsv"
 
-    def rnaseh_sensitive_summary(self, method, sample):
-        return f"{self.rnaseh_sensitive_qc}/{method}/{sample}.summary.tsv"
+    def peak_counts_featurecounts(self):
+        return f"{self.counts}/peak_counts.featureCounts.txt"
+
+    def peak_counts_cpm(self):
+        return f"{self.counts}/peak_counts.cpm.tsv"
+
+    def peak_counts_spikein_normalized(self):
+        return f"{self.counts}/peak_counts.spikein_normalized.tsv"
+
+    def peak_annotation_input(self):
+        return f"{self.counts}/peak_annotation_input.bed"
+
+    def peak_universe_saf(self):
+        return f"{self.counts}/peak_universe.saf"
+
+    def rnaseh_ratio_table(self, sample):
+        return f"{self.rnaseh}/{sample}.rnaseh_sensitive_ratio.tsv"
+
+    def rnaseh_ratio_bed(self, sample):
+        return f"{self.rnaseh}/{sample}.rnaseh_sensitive_ratio.bed"
+
+    def rnaseh_ratio_summary(self, sample):
+        return f"{self.rnaseh}/{sample}.rnaseh_sensitive_ratio.summary.tsv"
+
+    def rnaseh_deseq2_tsv(self, contrast):
+        return f"{self.rnaseh}/{contrast}.rnaseh_depleted.deseq2.tsv"
+
+    def rnaseh_deseq2_bed(self, contrast):
+        return f"{self.rnaseh}/{contrast}.rnaseh_depleted.bed"
 
     def intersect_peak(self, group):
         return f"{self.intersect_peaks}/{group}.intersect_peaks.bed"
@@ -156,8 +185,29 @@ class WorkflowPaths:
     def consensus_peak(self, group):
         return f"{self.consensus_peaks}/{group}.consensus_peaks.bed"
 
-    def rnaseh_sensitive_consensus_peak(self, method, group):
-        return f"{self.rnaseh_sensitive_consensus}/{method}/{group}.rnaseh_sensitive_consensus.bed"
+    def replicate_correlation(self):
+        return f"{self.rnaseh_qc}/replicate_correlation.tsv"
+
+    def replicate_correlation_heatmap(self):
+        return f"{self.rnaseh_qc}/replicate_correlation_heatmap.pdf"
+
+    def sample_pca(self):
+        return f"{self.rnaseh_qc}/sample_pca.pdf"
+
+    def peak_width_distribution(self):
+        return f"{self.rnaseh_qc}/peak_width_distribution.pdf"
+
+    def rnaseh_depletion_summary(self):
+        return f"{self.rnaseh_qc}/rnaseh_depletion_summary.tsv"
+
+    def spikein_summary(self):
+        return f"{self.rnaseh_qc}/spikein_summary.tsv"
+
+    def blacklist_mito_summary(self):
+        return f"{self.rnaseh_qc}/blacklist_mito_summary.tsv"
+
+    def frip_fragment_level(self):
+        return f"{self.rnaseh_qc}/frip_fragment_level.tsv"
 
     def multiqc_report(self):
         return f"{self.reports}/multiqc_report.html"
@@ -426,6 +476,63 @@ def parse_positive_float_config(key, default):
     return value
 
 
+def section(name):
+    value = config.get(name, {}) or {}
+    if not isinstance(value, dict):
+        raise ValueError(f"config['{name}'] must be a mapping.")
+    return value
+
+
+def section_bool(section_name, key, default=False):
+    value = section(section_name).get(key, default)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return bool(value)
+        raise ValueError(f"config['{section_name}']['{key}'] must be a boolean value.")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "t", "yes", "y", "1", "on"}:
+            return True
+        if normalized in {"false", "f", "no", "n", "0", "off", ""}:
+            return False
+    raise ValueError(f"config['{section_name}']['{key}'] must be a boolean value.")
+
+
+def nested_value(section_name, key, default=None):
+    return section(section_name).get(key, default)
+
+
+def parse_nested_positive_int(section_name, key, default):
+    try:
+        value = int(nested_value(section_name, key, default))
+    except (TypeError, ValueError):
+        raise ValueError(f"config['{section_name}']['{key}'] must be an integer.")
+    if value < 1:
+        raise ValueError(f"config['{section_name}']['{key}'] must be >= 1.")
+    return value
+
+
+def parse_nested_nonnegative_float(section_name, key, default):
+    try:
+        value = float(nested_value(section_name, key, default))
+    except (TypeError, ValueError):
+        raise ValueError(f"config['{section_name}']['{key}'] must be a number.")
+    if value < 0:
+        raise ValueError(f"config['{section_name}']['{key}'] must be >= 0.")
+    return value
+
+
+def parse_nested_positive_float(section_name, key, default):
+    value = parse_nested_nonnegative_float(section_name, key, default)
+    if value <= 0:
+        raise ValueError(f"config['{section_name}']['{key}'] must be > 0.")
+    return value
+
+
 def normalize_scale_methods(value):
     raw_methods = as_list(value if value is not None else ["CPM", "spikein"])
     if not raw_methods:
@@ -469,12 +576,30 @@ def build_workflow_context(config):
     fastqs = load_fastq_index(config, mode)
     validate_sample_fastqs(sample_data.samples, fastqs, mode)
 
-    if "spikein" in scale_methods:
-        if not str(config.get("spikein_genome", "") or "").strip():
-            raise ValueError("scale_methods includes spikein, so config['spikein_genome'] is required.")
+    spikein_cfg = section("spikein")
+    spikein_enabled = section_bool("spikein", "enabled", "spikein" in scale_methods)
+    spikein_index = str(spikein_cfg.get("bowtie2_index", "") or "").strip()
+    spikein_genome_name = str(spikein_cfg.get("genome", "ecoli") or "ecoli").strip()
+    spikein_mode = str(spikein_cfg.get("mode", "proper_pair_fragments" if mode == "pe" else "mapped_reads") or "").strip()
+    validate_choices([spikein_mode], ALLOWED_SPIKEIN_MODES, "spikein.mode")
+    if "spikein" in scale_methods and not spikein_enabled:
+        raise ValueError("scale_methods includes spikein, but config['spikein']['enabled'] is false.")
+    if spikein_enabled:
+        if not spikein_index:
+            raise ValueError("config['spikein']['bowtie2_index'] is required when spike-in normalization is enabled.")
         spikein_group_data = build_spikein_group_data(sample_data)
     else:
         spikein_group_data = SimpleNamespace(sample_to_group={}, group_to_reference={})
+
+    count_matrix_cfg = section("count_matrix")
+    count_matrix_enabled = section_bool("count_matrix", "enabled", True)
+    count_matrix_universe = str(count_matrix_cfg.get("peak_universe", "consensus") or "consensus").strip().lower()
+    validate_choices([count_matrix_universe], {"union", "consensus"}, "count_matrix.peak_universe")
+
+    rnaseh_cfg = section("rnaseh_sensitive")
+    rnaseh_enabled = section_bool("rnaseh_sensitive", "enabled", True)
+    rnaseh_mode = str(rnaseh_cfg.get("mode", "both") or "both").strip().lower()
+    validate_choices([rnaseh_mode], ALLOWED_RNASEH_MODES, "rnaseh_sensitive.mode")
 
     return SimpleNamespace(
         mode=mode,
@@ -493,16 +618,31 @@ def build_workflow_context(config):
         rnaseh_controls=sample_data.rnaseh_controls,
         scale_methods=scale_methods,
         scale_method_pattern=sample_pattern(scale_methods),
-        has_spikein="spikein" in scale_methods,
+        has_spikein=spikein_enabled,
+        spikein_genome=spikein_genome_name,
+        spikein_index=spikein_index,
+        spikein_counting_mode=spikein_mode,
         spikein_sample_to_group=spikein_group_data.sample_to_group,
         spikein_group_to_reference=spikein_group_data.group_to_reference,
-        spikein_min_mapped_reads=parse_positive_int_config("spikein_min_mapped_reads", 1000),
-        spikein_min_fraction=parse_nonnegative_float_config("spikein_min_fraction", 0.001),
+        spikein_min_mapped_reads=parse_nested_positive_int("spikein", "min_spikein_reads", 1000),
+        spikein_min_fraction=parse_nested_nonnegative_float("spikein", "warn_low_fraction", 0.001),
+        count_matrix_enabled=count_matrix_enabled,
+        count_matrix_peak_universe=count_matrix_universe,
+        count_matrix_min_peak_width=parse_nested_positive_int("count_matrix", "min_peak_width", 50),
+        count_matrix_merge_distance=parse_nested_nonnegative_float("count_matrix", "merge_distance", 100),
+        count_matrix_min_mapq=parse_nested_nonnegative_float("count_matrix", "min_mapq", 30),
+        count_matrix_featurecounts_extra=str(count_matrix_cfg.get("featurecounts_extra", "") or ""),
+        rnaseh_enabled=rnaseh_enabled,
+        rnaseh_mode=rnaseh_mode,
+        rnaseh_pseudocount=parse_nested_nonnegative_float("rnaseh_sensitive", "pseudocount", 0.1),
+        rnaseh_signal_min_fold_change=parse_nested_positive_float("rnaseh_sensitive", "min_fold_change", 2.0),
+        rnaseh_signal_min_treatment_signal=parse_nested_nonnegative_float("rnaseh_sensitive", "min_treatment_signal", 0.5),
+        rnaseh_min_abs_signal_diff=parse_nested_nonnegative_float("rnaseh_sensitive", "min_abs_signal_diff", 0.2),
+        rnaseh_fdr_threshold=parse_nested_positive_float("rnaseh_sensitive", "fdr_threshold", 0.05),
+        rnaseh_log2fc_threshold=parse_nested_nonnegative_float("rnaseh_sensitive", "log2fc_threshold", 1.0),
         consensus_min_support=parse_positive_int_config("consensus_min_support", 2),
         mark_duplicates_extra=validate_mark_duplicates_extra(),
         peak_duplicate_mode=normalize_duplicate_mode("peak_duplicate_mode", "auto", {"remove", "keep_marked", "auto"}),
-        rnaseh_signal_min_fold_change=parse_positive_float_config("rnaseh_signal_min_fold_change", 2.0),
-        rnaseh_signal_min_treatment_signal=parse_nonnegative_float_config("rnaseh_signal_min_treatment_signal", 0.0),
         enable_insert_size_qc=config_bool("enable_insert_size_qc", mode == "pe"),
         enable_multiqc=config_bool("enable_multiqc", True),
     )
@@ -520,13 +660,26 @@ def print_workflow_summary(ctx):
     print("Scale methods: " + ",".join(ctx.scale_methods))
     print("Peak duplicate mode: " + ctx.peak_duplicate_mode)
     if ctx.has_spikein:
+        print("Spike-in genome: " + ctx.spikein_genome)
+        print("Spike-in counting mode: " + ctx.spikein_counting_mode)
         refs = [f"{group}:{reference}" for group, reference in sorted(ctx.spikein_group_to_reference.items())]
         print("Spike-in reference groups: " + ",".join(refs))
+    print("Count matrix: " + ("enabled" if ctx.count_matrix_enabled else "disabled"))
+    print("RNaseH-sensitive analysis: " + (ctx.rnaseh_mode if ctx.rnaseh_enabled else "disabled"))
     print("MultiQC: " + ("enabled" if ctx.enable_multiqc else "disabled"))
 
 
 def rnaseh_treatments(ctx):
     return [sample for sample in ctx.treatments if ctx.rnaseh_controls.get(sample)]
+
+
+def rnaseh_contrasts(ctx):
+    contrasts = []
+    for group, members in ctx.group_data.items():
+        paired = [sample for sample in members if sample in ctx.treatments and ctx.rnaseh_controls.get(sample)]
+        if len(paired) >= 2:
+            contrasts.append(group)
+    return sorted(contrasts)
 
 
 def all_outputs(ctx):
@@ -538,11 +691,40 @@ def all_outputs(ctx):
         expand(PATHS.frip("{sample}"), sample=ctx.treatments),
         expand(PATHS.intersect_peak("{group}"), group=ctx.groups),
         expand(PATHS.consensus_peak("{group}"), group=ctx.groups),
-        expand(PATHS.rnaseh_sensitive_signal_table("{scale_method}", "{sample}"), scale_method=ctx.scale_methods, sample=rnaseh_samples),
-        expand(PATHS.rnaseh_sensitive_regions("{scale_method}", "{sample}"), scale_method=ctx.scale_methods, sample=rnaseh_samples),
-        expand(PATHS.rnaseh_sensitive_summary("{scale_method}", "{sample}"), scale_method=ctx.scale_methods, sample=rnaseh_samples),
-        expand(PATHS.rnaseh_sensitive_consensus_peak("{scale_method}", "{group}"), scale_method=ctx.scale_methods, group=ctx.groups),
     ]
+    if ctx.count_matrix_enabled:
+        outputs.extend([
+            PATHS.peak_universe(),
+            PATHS.peak_counts_raw(),
+            PATHS.peak_counts_featurecounts(),
+            PATHS.peak_counts_cpm(),
+            PATHS.peak_annotation_input(),
+            PATHS.peak_universe_saf(),
+        ])
+        if ctx.has_spikein:
+            outputs.append(PATHS.peak_counts_spikein_normalized())
+    if ctx.rnaseh_enabled and ctx.rnaseh_mode in {"ratio", "both"}:
+        outputs.extend([
+            expand(PATHS.rnaseh_ratio_table("{sample}"), sample=rnaseh_samples),
+            expand(PATHS.rnaseh_ratio_bed("{sample}"), sample=rnaseh_samples),
+            expand(PATHS.rnaseh_ratio_summary("{sample}"), sample=rnaseh_samples),
+        ])
+    if ctx.rnaseh_enabled and ctx.rnaseh_mode in {"deseq2", "both"} and ctx.count_matrix_enabled:
+        outputs.extend([
+            expand(PATHS.rnaseh_deseq2_tsv("{contrast}"), contrast=rnaseh_contrasts(ctx)),
+            expand(PATHS.rnaseh_deseq2_bed("{contrast}"), contrast=rnaseh_contrasts(ctx)),
+        ])
+    if ctx.count_matrix_enabled:
+        outputs.extend([
+            PATHS.replicate_correlation(),
+            PATHS.replicate_correlation_heatmap(),
+            PATHS.sample_pca(),
+            PATHS.peak_width_distribution(),
+            PATHS.rnaseh_depletion_summary(),
+            PATHS.spikein_summary(),
+            PATHS.blacklist_mito_summary(),
+            PATHS.frip_fragment_level(),
+        ])
     if "CPM" in ctx.scale_methods:
         outputs.append(expand(PATHS.bigwig_track("CPM", "{sample}"), sample=ctx.samples))
         outputs.append(expand(PATHS.bigwig_header_qc("{sample}"), sample=ctx.samples))
@@ -620,11 +802,13 @@ def scaled_bigwig_input(wildcards):
 
 
 def rnaseh_sensitive_treatment_bigwig(wildcards):
-    return PATHS.bigwig_track(wildcards.scale_method, wildcards.sample)
+    method = "spikein" if CTX.has_spikein and "spikein" in CTX.scale_methods else "CPM"
+    return PATHS.bigwig_track(method, wildcards.sample)
 
 
 def rnaseh_sensitive_control_bigwig(wildcards):
-    return PATHS.bigwig_track(wildcards.scale_method, CTX.rnaseh_controls[wildcards.sample])
+    method = "spikein" if CTX.has_spikein and "spikein" in CTX.scale_methods else "CPM"
+    return PATHS.bigwig_track(method, CTX.rnaseh_controls[wildcards.sample])
 
 
 def consensus_min_support(wildcards):
@@ -643,7 +827,28 @@ def replicate_peak_inputs(wildcards):
 
 
 def replicate_sensitive_inputs(wildcards):
-    return [PATHS.rnaseh_sensitive_regions(wildcards.scale_method, sample) for sample in replicates_for_group(wildcards) if CTX.rnaseh_controls.get(sample)]
+    return [PATHS.rnaseh_ratio_bed(sample) for sample in replicates_for_group(wildcards) if CTX.rnaseh_controls.get(sample)]
+
+
+def count_matrix_peak_inputs(wildcards):
+    return [PATHS.peak(sample) for sample in CTX.treatments]
+
+
+def count_matrix_bam_inputs(wildcards):
+    return [PATHS.signal_bam(sample) for sample in CTX.samples]
+
+
+def rnaseh_contrast_pairs_lines(wildcards):
+    lines = ["sample\tcondition\tpair"]
+    for treatment in CTX.group_data[wildcards.contrast]:
+        if treatment not in CTX.treatments:
+            continue
+        rnaseh = CTX.rnaseh_controls.get(treatment)
+        if not rnaseh:
+            continue
+        lines.append("\t".join([treatment, "NoRNaseH", treatment]))
+        lines.append("\t".join([rnaseh, "RNaseH", treatment]))
+    return "\n".join(lines)
 
 
 def fastq_metrics_lines():

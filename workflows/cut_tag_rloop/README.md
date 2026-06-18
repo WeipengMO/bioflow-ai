@@ -1,181 +1,116 @@
 # CUT&Tag R-loop Profiling Workflow
 
-This BioFlowAI workflow processes CUT&Tag-style R-loop profiling libraries from FASTQ files into filtered signal BAMs, normalized bigWig tracks, MACS3 CUT&Tag R-loop peaks, RNaseH-sensitive regions, replicate peak sets, normalization metrics, and QC reports.
+This BioFlowAI workflow processes CUT&Tag-style R-loop or DNA hybrid-associated libraries from FASTQ files into filtered BAMs, normalized signal tracks, raw sample peaks, shared peak-universe counts, RNaseH-sensitive candidate regions, replicate-aware RNaseH-depleted regions, and R-loop-specific QC summaries.
 
-The default logic is intentionally scoped to CUT&Tag R-loop analysis:
+Use cautious terminology when interpreting the outputs. Raw MACS3 peaks are regions of R-loop-associated CUT&Tag signal; they are not definitive R-loop sites. Stronger R-loop-associated calls should be based on loss of signal after RNase H treatment, ideally quantified over a shared peak universe with replicate-aware statistics. If the assay uses S9.6, antibody specificity can be a major confounder, so RNase H controls and orthogonal validation remain important.
 
-1. FASTQ quality control and adapter trimming with `fastp`.
-2. Human genome alignment with `bowtie2`.
-3. MAPQ, SAM flag, mitochondrial chromosome, and optional blacklist filtering.
-4. Duplicate marking for QC while keeping duplicate-marked fragments for signal and peak calling.
-5. CPM and E. coli spike-in normalized bigWig generation under method-specific `bigwig/` subdirectories.
-6. E. coli spike-in alignment and group-local spike-in scale factor calculation.
-7. MACS3 peak calling with `--keep-dup all`.
-8. RNaseH-sensitive region identification from treatment peaks by treatment-vs-RNaseH signal depletion.
-9. Strict replicate `intersect_peaks` and support-based `consensus_peaks`.
-10. FRiP, insert-size metrics, normalization metrics, spike-in warnings, and MultiQC reporting.
+## Biological Output Hierarchy
+
+Recommended interpretation order:
+
+1. `results/peaks/{sample}.cut_tag_rloop_peaks.*Peak`: raw sample peaks for discovery and browser review.
+2. `results/intersect_peaks/` and `results/consensus_peaks/`: replicate support summaries.
+3. `results/counts/peak_universe.bed`: shared union/consensus peak universe.
+4. `results/counts/peak_counts.*.tsv`: common-peak count matrices for quantitative comparison.
+5. `results/rnaseh/{sample}.rnaseh_sensitive_ratio.bed`: exploratory RNaseH-sensitive candidates from signal ratios.
+6. `results/rnaseh/{contrast}.rnaseh_depleted.deseq2.tsv` and `.bed`: statistically supported RNaseH-depleted regions.
+7. Differential R-loop-associated regions should be derived from shared counts and replicate-aware statistics, not sample-specific raw peaks alone.
+
+For global signal changes, spike-in normalization is preferred over CPM because CPM can mask real genome-wide gain or loss of DNA hybrid-associated signal.
 
 ## Inputs
 
 Required inputs:
 
-- Paired-end or single-end FASTQ files under `raw_data/`, or an explicit manifest at `config/fastq_manifest.tsv`.
+- Paired-end or single-end FASTQs under `raw_data/`, or `config/fastq_manifest.tsv`.
 - `config/config.yml`, copied from `config/config.example.yml`.
 - `config/samples.yml`, copied from `config/samples.example.yml`.
-- A human Bowtie2 genome index prefix.
-- MACS3 genome size, such as `hs`, `mm`, or a numeric effective genome size.
-- E. coli spike-in reads in the same FASTQs and an E. coli Bowtie2 index prefix for default spike-in scaling.
+- Host genome Bowtie2 index prefix and MACS3 genome size.
+- Spike-in Bowtie2 index when `spikein.enabled: true`.
 
 Recommended inputs:
 
-- Matched input/background controls for MACS3 when available.
-- Matched RNase H-treated libraries for RNaseH-sensitive region identification.
-- ENCODE blacklist BED for the same human genome build.
+- Matched input/background controls for MACS3.
+- Matched RNase H-treated controls for each treatment sample.
+- Biological replicate groups in `samples.yml`.
+- A genome-build matched blacklist BED.
 
-FASTQ auto-discovery supports common names such as:
+## Configuration Highlights
 
-```text
-sample_R1.fastq.gz
-sample_R2.fastq.gz
-sample_1.fq.gz
-sample_2.fq.gz
-```
-
-For irregular names or unmerged lanes, generate and edit a manifest:
-
-```bash
-python scripts/make_fastq_manifest.py --raw-data-dir raw_data --output config/fastq_manifest.tsv
-```
-
-Then set:
+Main biological config sections:
 
 ```yaml
-fastq_manifest: config/fastq_manifest.tsv
+spikein:
+  enabled: true
+  genome: ecoli
+  bowtie2_index: data/spikein/ecoli_mg1655
+  mode: proper_pair_fragments
+  min_spikein_reads: 1000
+  warn_low_fraction: 0.001
+
+count_matrix:
+  enabled: true
+  peak_universe: consensus
+  min_peak_width: 50
+  merge_distance: 100
+  min_mapq: 30
+  featurecounts_extra: ""
+
+rnaseh_sensitive:
+  enabled: true
+  mode: both
+  pseudocount: 0.1
+  min_treatment_signal: 0.5
+  min_abs_signal_diff: 0.2
+  min_fold_change: 2.0
+  fdr_threshold: 0.05
+  log2fc_threshold: 1.0
 ```
 
-## Configuration
+`spikein.genome` is a label; `spikein.bowtie2_index` controls the actual alignment target. E. coli is only the default example.
 
-Main config keys:
-
-| Key | Meaning |
-| --- | --- |
-| `assay` | Workflow label; default `CUT&Tag-R-loop` |
-| `mode` | `pe` or `se` |
-| `raw_data_dir` | FASTQ directory used when no manifest is provided |
-| `sample_config` | Sample metadata YAML |
-| `genome` | Human Bowtie2 index prefix |
-| `gsize` | MACS3 genome size |
-| `blacklist` | Optional blacklist BED removed from BAMs |
-| `peak_type` | `broad` or `narrow`; broad is the default for R-loop-enriched domains |
-| `scale_methods` | List containing `CPM`, `spikein`, or both; default is both |
-| `spikein_genome` | E. coli Bowtie2 index prefix; required by the default workflow |
-| `spikein_min_mapped_reads` | Warning threshold for low E. coli mapped reads |
-| `spikein_min_fraction` | Warning threshold for low E. coli read fraction |
-| `peak_duplicate_mode` | `auto`, `keep_marked`, or `remove`; `auto` keeps duplicate-marked BAMs for CUT&Tag peak calling |
-| `rnaseh_signal_min_fold_change` | Minimum treatment/RNaseH signal ratio for RNaseH-sensitive regions; default `2.0` |
-| `rnaseh_signal_min_treatment_signal` | Minimum treatment signal for RNaseH-sensitive regions; default `0.0` |
-| `consensus_min_support` | Minimum replicate support for consensus peak sets |
-
-Sample metadata uses one mapping entry per FASTQ sample:
+Sample metadata keeps the existing role fields:
 
 ```yaml
 WT_CutTag_RLoop_rep1:
   role: treatment
-  group: WT_CutTag_RLoop_rep1
+  group: WT
   control: WT_Input_rep1
   rnaseh_control: WT_RNaseH_rep1
-WT_Input_rep1:
-  role: control
 WT_RNaseH_rep1:
   role: rnaseh_control
+WT_Input_rep1:
+  role: control
 ```
 
-- `role: treatment` marks CUT&Tag R-loop samples that should be peak-called.
-- `role: control` marks input/background controls used by MACS3.
-- `role: rnaseh_control` marks matched RNase H-treated libraries.
-- `group` names the spike-in normalization group for one treatment/RNaseH pair.
-- `control` points from a treatment sample to a MACS3 control sample.
-- `rnaseh_control` points from a treatment sample to its matched RNase H-treated sample.
+`group` should identify biological replicate groups used for consensus peaks and replicate-aware RNaseH statistics.
 
-## Scale Methods
+## Key Outputs
 
-`scale_methods` is a list. The default workflow runs both supported methods:
-
-- `CPM`: depth-normalized signal tracks.
-- `spikein`: group-local E. coli spike-in scaled signal tracks.
-
-Example:
-
-```yaml
-scale_methods:
-  - CPM
-  - spikein
-spikein_genome: data/spikein/ecoli_mg1655
-```
-
-For spike-in scaling, each treatment sample's `group` defines one normalization group and the treatment sample is the reference for its matched RNase H control. The final bigWig scale factor is:
-
-```text
-spikein_reads_reference / spikein_reads_sample * 1e6 / human_unique_fragments_reference
-```
-
-With the default `spikein` method, the workflow writes:
-
-```text
-results/qc/normalization/normalization_metrics.tsv
-warnings/cut_tag_rloop_spikein.warning.tsv
-warnings/cut_tag_rloop_spikein.warning.txt
-```
-
-`normalization_metrics.tsv` records:
-
-```text
-sample
-human_total_reads
-human_mapped_reads
-human_unique_fragments
-ecoli_total_reads
-ecoli_mapped_reads
-ecoli_unique_fragments
-ecoli_fraction
-spikein_group
-spikein_reference_sample
-spikein_reference_ecoli_mapped_reads
-spikein_reference_human_unique_fragments
-spikein_raw_scale_factor
-spikein_unit_scale_factor
-spikein_scale_factor
-scale_method
-warning_level
-warning_message
-```
-
-If any sample has `ecoli_mapped_reads=0`, the spike-in branch fails after writing warning files outside `results/`. Low nonzero spike-in support writes warnings and continues.
-
-## Outputs
-
-Default output root: `results/`.
-
-Important outputs:
-
-| Output | Description |
+| Output | Meaning |
 | --- | --- |
-| `aligned_data/{sample}.signal.keepdup.filtered.bam` | Filtered duplicate-marked signal BAM |
-| `bigwig/CPM/{sample}.CPM.bw` | CPM-normalized bigWig |
-| `bigwig/spikein/{sample}.spikein.bw` | Group-local spike-in normalized bigWig |
-| `peaks/{sample}.cut_tag_rloop_peaks.*Peak` | MACS3 CUT&Tag R-loop peaks |
-| `rnaseh_sensitive/{method}/{sample}.rnaseh_sensitive_signal.tsv` | Per-peak treatment/RNaseH signal table |
-| `rnaseh_sensitive/{method}/{sample}.rnaseh_sensitive_regions.bed` | RNaseH-sensitive regions passing signal thresholds |
-| `intersect_peaks/{group}.intersect_peaks.bed` | Strict all-replicate supported peaks |
-| `consensus_peaks/{group}.consensus_peaks.bed` | Support-threshold consensus peaks |
-| `rnaseh_sensitive_consensus/{method}/{group}.rnaseh_sensitive_consensus.bed` | Replicate-level RNaseH-sensitive consensus regions |
-| `qc/normalization/normalization_metrics.tsv` | Human/E. coli normalization metrics and spike-in scale factors |
-| `qc/frip/{sample}.frip.txt` | FRiP over MACS3 CUT&Tag R-loop peaks |
-| `qc/rnaseh_sensitive/{method}/{sample}.summary.tsv` | RNaseH-sensitive region summary |
-| `reports/multiqc_report.html` | MultiQC summary |
-| `warnings/cut_tag_rloop_spikein.warning.*` | Project-level spike-in warning files outside `results/` |
-
-The bigWig files are signal tracks produced by different normalization methods. Downstream analysis should center on peak files, RNaseH-sensitive regions, consensus peak sets, and counts over consensus peaks rather than treating bigWig tracks as the primary quantitative result.
+| `results/aligned_data/{sample}.signal.keepdup.filtered.bam` | Filtered duplicate-marked BAM for signal, FRiP, and count quantification |
+| `results/aligned_data/{sample}.peaks.dedup.filtered.bam` | Deduplicated/peak-mode BAM when configured for peak calling |
+| `results/bigwig/CPM/{sample}.CPM.bw` | CPM-normalized browser signal |
+| `results/bigwig/spikein/{sample}.spikein.bw` | Spike-in normalized browser signal |
+| `results/qc/normalization/spikein_summary.tsv` | Generic spike-in metrics and scale factors |
+| `results/counts/peak_universe.bed` | Shared peak universe |
+| `results/counts/peak_universe.saf` | SAF annotation passed to featureCounts |
+| `results/counts/peak_counts.featureCounts.txt` | Raw featureCounts output |
+| `results/counts/peak_counts.raw.tsv` | Raw shared-universe counts |
+| `results/counts/peak_counts.cpm.tsv` | CPM counts |
+| `results/counts/peak_counts.spikein_normalized.tsv` | Spike-in scaled counts |
+| `results/rnaseh/{sample}.rnaseh_sensitive_ratio.bed` | Exploratory RNaseH-sensitive ratio calls |
+| `results/rnaseh/{contrast}.rnaseh_depleted.deseq2.tsv` | Replicate-aware RNaseH depletion statistics |
+| `results/rnaseh/{contrast}.rnaseh_depleted.bed` | FDR/log2FC-filtered RNaseH-depleted regions |
+| `results/qc/replicate_correlation.tsv` | Correlation over shared peak counts |
+| `results/qc/replicate_correlation_heatmap.pdf` | Count-correlation heatmap |
+| `results/qc/sample_pca.pdf` | PCA over shared peak counts |
+| `results/qc/peak_width_distribution.pdf` | Peak width distribution |
+| `results/qc/rnaseh_depletion_summary.tsv` | Combined RNaseH ratio/statistical summaries |
+| `results/qc/spikein_summary.tsv` | QC-level copy/summary of spike-in metrics |
+| `results/qc/blacklist_mito_summary.tsv` | Filtering-status summary |
+| `results/qc/frip_fragment_level.tsv` | FRiP summary table |
 
 ## Quick Start
 
@@ -186,31 +121,30 @@ cd workflows/cut_tag_rloop
 ./scripts/deploy_pipeline.sh /path/to/cut_tag_rloop_project
 ```
 
-Then edit:
+Edit:
 
 ```text
 /path/to/cut_tag_rloop_project/config/config.yml
 /path/to/cut_tag_rloop_project/config/samples.yml
 ```
 
-Run a dry-run first:
+Dry-run:
 
 ```bash
 cd /path/to/cut_tag_rloop_project
 ./run_snakemake.sh -n -p
 ```
 
-Run the workflow:
+Run:
 
 ```bash
 ./run_snakemake.sh
 ```
 
-## Troubleshooting
+## Notes And Limitations
 
-- Missing FASTQs: check sample names in `config/samples.yml` against FASTQ names or `config/fastq_manifest.tsv`.
-- Missing spike-in index: build one with `bash scripts/build_spikein_index.sh`, then set `spikein_genome`.
-- Empty filtered BAMs: check genome build, `alignment_filter_min_mapq`, SAM flag filters, mitochondrial chromosome names, and blacklist file.
-- Weak signal: inspect input/RNase H controls, duplicate rate, library complexity, and peak mode.
-- RNaseH-sensitive output from CPM should be treated as exploratory when global depletion is the biological question.
-- Spike-in warnings are written outside `results/` in `warnings/`; check them before interpreting spike-in scaled results.
+- Ratio-based RNaseH-sensitive regions are exploratory and not replicate-aware.
+- DESeq2 RNaseH depletion requires at least two treatment/RNaseH pairs in a `group`.
+- The count matrix is generated with `featureCounts`; paired-end mode uses `-p --countReadPairs -B -C`.
+- Optional TSS/TES/gene-body metaplots require genome annotation and are not enabled by default in this lightweight workflow.
+- If spike-in reads are absent or below thresholds, inspect `warnings/cut_tag_rloop_spikein.warning.*`; use CPM cautiously as a fallback.

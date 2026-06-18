@@ -50,4 +50,7 @@ fi
 
 echo ""
 echo "Done. Add this to your config/config.yml:"
-echo "  spikein_genome: $INDEX_PREFIX"
+echo "  spikein:"
+echo "    enabled: true"
+echo "    genome: ecoli"
+echo "    bowtie2_index: $INDEX_PREFIX"

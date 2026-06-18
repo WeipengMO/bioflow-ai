@@ -31,17 +31,34 @@ peak_duplicate_mode: auto  # auto | keep_marked | remove
 enable_insert_size_qc: true
 enable_multiqc: true
 
-# Scale methods can be multi-selected. The default CUT&Tag R-loop run produces
-# both CPM browser tracks and spike-in scaled tracks.
+# Scale methods can be multi-selected. Spike-in is preferred when global signal
+# changes are biologically meaningful.
 scale_methods:
   - CPM
   - spikein
 
-# Spike-in normalization. Required by the default scale_methods.
-# Each treatment sample's group defines one spike-in normalization group and reference.
-spikein_genome: data/spikein/ecoli_mg1655
-spikein_min_mapped_reads: 1000
-spikein_min_fraction: 0.001
+# Generic spike-in normalization. E. coli remains the example/default genome,
+# but any spike-in genome can be used if a Bowtie2 index is provided.
+spikein:
+  enabled: true
+  genome: ecoli
+  genome_fasta: ""
+  bowtie2_index: data/spikein/ecoli_mg1655
+  mode: proper_pair_fragments
+  allowed_modes:
+    - mapped_reads
+    - proper_pair_fragments
+  min_spikein_reads: 1000
+  warn_low_fraction: 0.001
+
+# Shared peak-universe quantification for downstream differential analysis.
+count_matrix:
+  enabled: true
+  peak_universe: consensus  # consensus | union
+  min_peak_width: 50
+  merge_distance: 100
+  min_mapq: 30
+  featurecounts_extra: ""
 
 # Tool-specific extra arguments
 fastp_extra: ""
@@ -54,9 +71,17 @@ alignment_filter_view_extra: ""  # auto: PE uses -F 3852, SE uses -F 3844
 bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
 spikein_bam_coverage_extra: "--binSize 10 --normalizeUsing None"
 
-# RNaseH-sensitive region thresholds.
-rnaseh_signal_min_fold_change: 2.0
-rnaseh_signal_min_treatment_signal: 0.0
+# RNaseH-sensitive region thresholds. Ratio mode is exploratory; DESeq2 mode
+# uses the shared count matrix and replicate-aware paired statistics.
+rnaseh_sensitive:
+  enabled: true
+  mode: both  # ratio | deseq2 | both
+  pseudocount: 0.1
+  min_treatment_signal: 0.5
+  min_abs_signal_diff: 0.2
+  min_fold_change: 2.0
+  fdr_threshold: 0.05
+  log2fc_threshold: 1.0
 
 # MACS3 defaults are chosen from peak_type and mode.
 # broad:  --broad --broad-cutoff 0.1 --keep-dup all -q 0.05
@@ -81,11 +106,14 @@ threads:
   bam_coverage: 8
   bam_coverage_scaled: 8
   normalization: 2
+  count_matrix: 4
   bigwig_header_qc: 1
   macs3: 1
   rnaseh_sensitive: 2
+  rnaseh_deseq2: 1
   intersect_peaks: 2
   consensus_peaks: 2
   insert_size: 2
   frip: 4
+  rloop_qc: 1
   multiqc: 2

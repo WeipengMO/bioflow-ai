@@ -28,10 +28,10 @@ external_references:
   blacklist_bed:
     config_key: blacklist
     required: false
-  ecoli_spikein_bowtie2_index:
-    config_key: spikein_genome
+  spikein_bowtie2_index:
+    config_key: spikein.bowtie2_index
     required: true
-    note: Required by the default CPM plus spikein scale_methods.
+    note: Required when spikein.enabled is true.
 
 generated:
   results/clean_data/:
@@ -42,9 +42,9 @@ generated:
     safe_to_delete: true
   results/peaks/:
     safe_to_delete: true
-  results/rnaseh_sensitive/:
+  results/rnaseh/:
     safe_to_delete: true
-  results/rnaseh_sensitive_consensus/:
+  results/counts/:
     safe_to_delete: true
   results/intersect_peaks/:
     safe_to_delete: true
@@ -70,13 +70,21 @@ final_outputs:
   - results/bigwig/spikein/{sample}.spikein.bw
   - results/peaks/{sample}.cut_tag_rloop_peaks.broadPeak
   - results/peaks/{sample}.cut_tag_rloop_peaks.narrowPeak
-  - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_signal.tsv
-  - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_regions.bed
-  - results/rnaseh_sensitive_consensus/{scale_method}/{group}.rnaseh_sensitive_consensus.bed
+  - results/rnaseh/{sample}.rnaseh_sensitive_ratio.tsv
+  - results/rnaseh/{sample}.rnaseh_sensitive_ratio.bed
+  - results/rnaseh/{contrast}.rnaseh_depleted.deseq2.tsv
+  - results/rnaseh/{contrast}.rnaseh_depleted.bed
+  - results/counts/peak_universe.bed
+  - results/counts/peak_universe.saf
+  - results/counts/peak_counts.featureCounts.txt
+  - results/counts/peak_counts.raw.tsv
+  - results/counts/peak_counts.cpm.tsv
+  - results/counts/peak_counts.spikein_normalized.tsv
   - results/intersect_peaks/{group}.intersect_peaks.bed
   - results/consensus_peaks/{group}.consensus_peaks.bed
-  - results/qc/normalization/normalization_metrics.tsv
-  - results/qc/rnaseh_sensitive/{scale_method}/{sample}.summary.tsv
+  - results/qc/normalization/spikein_summary.tsv
+  - results/qc/replicate_correlation.tsv
+  - results/qc/rnaseh_depletion_summary.tsv
   - results/qc/frip/{sample}.frip.txt
   - results/qc/bigwig/{sample}.bigwig_header.tsv
   - results/qc/insert_size/{sample}.insert_size_metrics.txt

@@ -31,7 +31,7 @@ snakemake -np --use-conda
 ```yaml
 WT_CutTag_RLoop_rep1:
   role: treatment
-  group: WT_CutTag_RLoop_rep1
+  group: WT
   control: WT_Input_rep1
   rnaseh_control: WT_RNaseH_rep1
 WT_Input_rep1:
@@ -48,8 +48,13 @@ peak_type: broad
 scale_methods:
   - CPM
   - spikein
-spikein_genome: data/spikein/ecoli_mg1655
-rnaseh_signal_min_fold_change: 2.0
+spikein:
+  enabled: true
+  genome: ecoli
+  bowtie2_index: data/spikein/ecoli_mg1655
+rnaseh_sensitive:
+  mode: both
+  min_fold_change: 2.0
 ```
 
 ## Confirm default spike-in scale
@@ -60,12 +65,15 @@ rnaseh_signal_min_fold_change: 2.0
    scale_methods:
      - CPM
      - spikein
-   spikein_genome: data/spikein/ecoli_mg1655
-   spikein_min_mapped_reads: 1000
-   spikein_min_fraction: 0.001
+   spikein:
+     enabled: true
+     genome: ecoli
+     bowtie2_index: data/spikein/ecoli_mg1655
+     min_spikein_reads: 1000
+     warn_low_fraction: 0.001
    ```
 3. Dry-run with `snakemake -np --use-conda`.
-4. After execution, inspect `results/qc/normalization/normalization_metrics.tsv` and `warnings/cut_tag_rloop_spikein.warning.tsv`.
+4. After execution, inspect `results/qc/normalization/spikein_summary.tsv` and `warnings/cut_tag_rloop_spikein.warning.tsv`.
 
 ## Inspect failed rule
 
