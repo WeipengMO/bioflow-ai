@@ -1,0 +1,166 @@
+workflow:
+  name: cut_tag_rloop
+  description: CUT&Tag R-loop workflow from FASTQ to filtered signal BAMs, method-normalized bigWig tracks, MACS3 peaks, RNaseH-sensitive regions, replicate peak sets, normalization metrics, warnings, and QC reports.
+  status: development
+
+entrypoint:
+  snakefile: Snakefile
+  example_config: config/config.example.yml
+  sample_config: config/samples.example.yml
+
+commands:
+  deploy_project: ./scripts/deploy_pipeline.sh /path/to/cut_tag_rloop_project
+  dry_run: snakemake -np --use-conda
+  run: snakemake --use-conda -j 16
+  unlock: snakemake --unlock
+  generate_fastq_manifest: python scripts/make_fastq_manifest.py --raw-data-dir raw_data --output config/fastq_manifest.tsv
+
+inputs:
+  config:
+    path: config/config.yml
+    required: true
+  samples:
+    path: config/samples.yml
+    required: true
+  fastqs:
+    path: raw_data/
+    required: true
+  fastq_manifest:
+    path: config/fastq_manifest.tsv
+    required: false
+
+outputs:
+  aligned_bams:
+    path: results/aligned_data/
+  bigwig_tracks:
+    path: results/bigwig/
+  peaks:
+    path: results/peaks/
+  rnaseh_sensitive:
+    path: results/rnaseh_sensitive/
+  rnaseh_sensitive_consensus:
+    path: results/rnaseh_sensitive_consensus/
+  intersect_peaks:
+    path: results/intersect_peaks/
+  consensus_peaks:
+    path: results/consensus_peaks/
+  normalization_qc:
+    path: results/qc/normalization/
+  warnings:
+    path: warnings/
+  qc:
+    path: results/qc/
+  reports:
+    path: results/reports/
+  logs:
+    path: results/logs/
+
+safety:
+  user_owned:
+    - raw_data/
+    - config/config.yml
+    - config/samples.yml
+    - config/fastq_manifest.tsv
+  safe_to_regenerate:
+    - results/clean_data/
+    - results/aligned_data/
+    - results/bigwig/
+    - results/peaks/
+    - results/rnaseh_sensitive/
+    - results/rnaseh_sensitive_consensus/
+    - results/intersect_peaks/
+    - results/consensus_peaks/
+    - results/qc/
+    - results/reports/
+    - results/logs/
+    - warnings/
+    - .snakemake/
+
+notes:
+  - Always run a dry-run before changing workflow logic or starting a full run.
+  - Human genome resources must be build-consistent, especially bowtie2 index, blacklist, and MACS3 gsize.
+  - CUT&Tag peak calling keeps duplicate-marked fragments by default and records duplicate metrics as QC.
+  - RNaseH-sensitive regions are identified by treatment-vs-RNaseH signal over treatment peaks.
+  - Default scale_methods are CPM and spikein; bigWigs are method-normalized signal tracks, while downstream interpretation should prioritize peaks, RNaseH-sensitive regions, consensus peak sets, and consensus peak counts.
+  - Spike-in warnings are written outside results in warnings/.
+
+required_config_keys:
+  - mode
+  - sample_config
+  - raw_data_dir
+  - genome
+  - gsize
+  - peak_type
+  - scale_methods
+  - spikein_genome
+
+optional_config_keys:
+  - assay
+  - fastq_manifest
+  - warning_dir
+  - blacklist
+  - mitochondrial_chromosomes
+  - spikein_min_mapped_reads
+  - spikein_min_fraction
+  - peak_duplicate_mode
+  - rnaseh_signal_min_fold_change
+  - rnaseh_signal_min_treatment_signal
+  - enable_insert_size_qc
+  - enable_multiqc
+  - fastp_extra
+  - fastp_pe_extra
+  - fastp_se_extra
+  - alignment_filter_min_mapq
+  - alignment_filter_view_extra
+  - macs3_extra
+  - consensus_min_support
+
+sample_metadata:
+  file: config/samples.yml
+  schema:
+    sample_name:
+      role: treatment | control | rnaseh_control
+      group: required spike-in normalization group for treatment samples
+      control: optional MACS3 control sample for treatment samples
+      rnaseh_control: optional RNase H control sample for treatment samples
+
+fastq_manifest:
+  file: config/fastq_manifest.tsv
+  columns:
+    sample: required
+    read1: required
+    read2: required_for_pe_optional_for_se
+
+generated_outputs:
+  bams:
+    - results/aligned_data/{sample}.signal.keepdup.filtered.bam
+    - results/aligned_data/{sample}.signal.keepdup.filtered.bam.bai
+  tracks:
+    - results/bigwig/CPM/{sample}.CPM.bw
+    - results/bigwig/spikein/{sample}.spikein.bw
+  peaks:
+    - results/peaks/{sample}.cut_tag_rloop_peaks.broadPeak
+    - results/peaks/{sample}.cut_tag_rloop_peaks.narrowPeak
+  rnaseh_sensitive:
+    - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_signal.tsv
+    - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_regions.bed
+  rnaseh_sensitive_consensus:
+    - results/rnaseh_sensitive_consensus/{scale_method}/{group}.rnaseh_sensitive_consensus.bed
+  replicate_peak_sets:
+    - results/intersect_peaks/{group}.intersect_peaks.bed
+    - results/consensus_peaks/{group}.consensus_peaks.bed
+  normalization:
+    - results/qc/normalization/normalization_metrics.tsv
+    - warnings/cut_tag_rloop_spikein.warning.tsv
+    - warnings/cut_tag_rloop_spikein.warning.txt
+  qc:
+    - results/qc/fastp/{sample}.html
+    - results/qc/mark_duplicates/{sample}.metrics.txt
+    - results/qc/insert_size/{sample}.insert_size_metrics.txt
+    - results/qc/frip/{sample}.frip.txt
+    - results/qc/bigwig/{sample}.bigwig_header.tsv
+    - results/qc/rnaseh_sensitive/{scale_method}/{sample}.summary.tsv
+  reports:
+    - results/reports/multiqc_report.html
+  logs:
+    - results/logs/

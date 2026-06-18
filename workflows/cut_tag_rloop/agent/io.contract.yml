@@ -1,0 +1,85 @@
+version: 1
+
+inputs:
+  config/config.yml:
+    owner: user
+    required: true
+    description: Project-specific CUT&Tag R-loop workflow configuration.
+  config/samples.yml:
+    owner: user
+    required: true
+    description: Sample metadata keyed by sample name, including treatment/control/RNase H roles.
+  config/fastq_manifest.tsv:
+    owner: user
+    required: false
+    description: Explicit FASTQ mapping for irregular names or unmerged lanes.
+  raw_data/:
+    owner: user
+    required: true
+    description: FASTQ directory used when fastq_manifest is not set.
+
+external_references:
+  human_bowtie2_index:
+    config_key: genome
+    required: true
+  genome_size:
+    config_key: gsize
+    required: true
+  blacklist_bed:
+    config_key: blacklist
+    required: false
+  ecoli_spikein_bowtie2_index:
+    config_key: spikein_genome
+    required: true
+    note: Required by the default CPM plus spikein scale_methods.
+
+generated:
+  results/clean_data/:
+    safe_to_delete: true
+  results/aligned_data/:
+    safe_to_delete: true
+  results/bigwig/:
+    safe_to_delete: true
+  results/peaks/:
+    safe_to_delete: true
+  results/rnaseh_sensitive/:
+    safe_to_delete: true
+  results/rnaseh_sensitive_consensus/:
+    safe_to_delete: true
+  results/intersect_peaks/:
+    safe_to_delete: true
+  results/consensus_peaks/:
+    safe_to_delete: true
+  results/qc/:
+    safe_to_delete: true
+  results/reports/:
+    safe_to_delete: true
+  results/logs/:
+    safe_to_delete: true
+  warnings/:
+    safe_to_delete: true
+    note: Project-level spike-in warning files outside results.
+  .snakemake/:
+    safe_to_delete: conditional
+    note: Do not delete while a workflow is running.
+
+final_outputs:
+  - results/aligned_data/{sample}.signal.keepdup.filtered.bam
+  - results/aligned_data/{sample}.signal.keepdup.filtered.bam.bai
+  - results/bigwig/CPM/{sample}.CPM.bw
+  - results/bigwig/spikein/{sample}.spikein.bw
+  - results/peaks/{sample}.cut_tag_rloop_peaks.broadPeak
+  - results/peaks/{sample}.cut_tag_rloop_peaks.narrowPeak
+  - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_signal.tsv
+  - results/rnaseh_sensitive/{scale_method}/{sample}.rnaseh_sensitive_regions.bed
+  - results/rnaseh_sensitive_consensus/{scale_method}/{group}.rnaseh_sensitive_consensus.bed
+  - results/intersect_peaks/{group}.intersect_peaks.bed
+  - results/consensus_peaks/{group}.consensus_peaks.bed
+  - results/qc/normalization/normalization_metrics.tsv
+  - results/qc/rnaseh_sensitive/{scale_method}/{sample}.summary.tsv
+  - results/qc/frip/{sample}.frip.txt
+  - results/qc/bigwig/{sample}.bigwig_header.tsv
+  - results/qc/insert_size/{sample}.insert_size_metrics.txt
+  - results/reports/multiqc_report.html
+  - warnings/cut_tag_rloop_spikein.warning.tsv
+  - warnings/cut_tag_rloop_spikein.warning.txt

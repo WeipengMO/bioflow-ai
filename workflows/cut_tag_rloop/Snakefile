@@ -1,0 +1,44 @@
+configfile:
+    "config/config.yml"
+
+workdir:
+    config.get("workdir", ".")
+
+
+include:
+    "rules/common.smk"
+
+
+CTX = build_workflow_context(config)
+print_workflow_summary(CTX)
+
+OUTDIR = PATHS.outdir
+ENV = "../envs/cut_tag_rloop.yml"
+
+MODE = CTX.mode
+SAMPLES = CTX.samples
+SAMPLE_PATTERN = CTX.sample_pattern
+TREATMENTS = CTX.treatments
+TREATMENT_PATTERN = CTX.treatment_pattern
+GROUPS = CTX.groups
+GROUP_PATTERN = CTX.group_pattern
+SCALE_METHODS = CTX.scale_methods
+SCALE_METHOD_PATTERN = CTX.scale_method_pattern
+
+ENABLE_INSERT_SIZE_QC = CTX.enable_insert_size_qc
+ENABLE_MULTIQC = CTX.enable_multiqc
+
+
+include:
+    "rules/preprocess.smk"
+
+include:
+    "rules/peak_calling.smk"
+
+include:
+    "rules/qc.smk"
+
+
+rule all:
+    input:
+        all_outputs(CTX)

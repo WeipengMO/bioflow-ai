@@ -1,0 +1,91 @@
+# BioFlowAI CUT&Tag R-loop profiling workflow configuration.
+# Copy this file to config/config.yml before running.
+
+assay: CUT&Tag-R-loop
+mode: pe  # pe or se
+outdir: results
+warning_dir: warnings
+
+sample_config: config/samples.yml
+raw_data_dir: raw_data
+
+# Optional explicit FASTQ manifest. Leave empty to auto-discover FASTQs from raw_data_dir.
+fastq_manifest: ""
+
+# Reference files. Keep all genome resources on the same assembly.
+genome: /path/to/human/bowtie2/index/prefix
+gsize: hs  # MACS3 genome size. Can be a number (e.g. 2.7e9) or a predefined code.
+blacklist: /path/to/ENCODE_blacklist.bed
+
+# Chromosome names removed before duplicate marking. Set [] to disable mitochondrial filtering.
+mitochondrial_chromosomes:
+  - chrM
+  - MT
+
+# Software dependency paths
+picard_path: picard
+
+# Core CUT&Tag defaults
+peak_type: broad
+peak_duplicate_mode: auto  # auto | keep_marked | remove
+enable_insert_size_qc: true
+enable_multiqc: true
+
+# Scale methods can be multi-selected. The default CUT&Tag R-loop run produces
+# both CPM browser tracks and spike-in scaled tracks.
+scale_methods:
+  - CPM
+  - spikein
+
+# Spike-in normalization. Required by the default scale_methods.
+# Each treatment sample's group defines one spike-in normalization group and reference.
+spikein_genome: data/spikein/ecoli_mg1655
+spikein_min_mapped_reads: 1000
+spikein_min_fraction: 0.001
+
+# Tool-specific extra arguments
+fastp_extra: ""
+fastp_pe_extra: "--detect_adapter_for_pe"
+fastp_se_extra: ""
+bowtie2_extra: "--very-sensitive"
+mark_duplicates_extra: ""
+alignment_filter_min_mapq: 30
+alignment_filter_view_extra: ""  # auto: PE uses -F 3852, SE uses -F 3844
+bam_coverage_extra: "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions"
+spikein_bam_coverage_extra: "--binSize 10 --normalizeUsing None"
+
+# RNaseH-sensitive region thresholds.
+rnaseh_signal_min_fold_change: 2.0
+rnaseh_signal_min_treatment_signal: 0.0
+
+# MACS3 defaults are chosen from peak_type and mode.
+# broad:  --broad --broad-cutoff 0.1 --keep-dup all -q 0.05
+# narrow: --keep-dup all -q 0.01
+macs3_extra: ""
+
+# Replicate peak support.
+consensus_min_support: 2
+
+# Optional report customization
+insert_size_extra: ""
+multiqc_extra: ""
+
+# Per-rule threads
+threads:
+  fastp: 8
+  bowtie2: 24
+  alignment_filter: 4
+  mark_duplicates: 4
+  remove_duplicates: 4
+  blacklist_filter: 4
+  bam_coverage: 8
+  bam_coverage_scaled: 8
+  normalization: 2
+  bigwig_header_qc: 1
+  macs3: 1
+  rnaseh_sensitive: 2
+  intersect_peaks: 2
+  consensus_peaks: 2
+  insert_size: 2
+  frip: 4
+  multiqc: 2
