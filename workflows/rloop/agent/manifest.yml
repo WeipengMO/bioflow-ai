@@ -1,6 +1,6 @@
 workflow:
   name: rloop
-  description: R-loop profiling workflow from FASTQ to filtered BAM, bigWig, MACS3 broad/narrow peaks, optional RNase H-sensitive peaks, replicate consensus peaks, FRiP, insert-size QC, and MultiQC.
+  description: R-loop profiling workflow from FASTQ to filtered BAM, CPM and optional common-scale bigWigs, MACS3 broad/narrow peaks, RNase H no-overlap peaks, quantitative RNaseH signal summaries, replicate consensus peaks, FRiP, insert-size QC, and MultiQC.
   status: development
 
 entrypoint:
@@ -34,10 +34,18 @@ outputs:
     path: results/aligned_data/
   tracks:
     path: results/bigwig/
+  common_scale_tracks:
+    path: results/bigwig_common_scale/
   macs3_peaks:
     path: results/macs3_results/
+  rnaseh_no_overlap_peaks:
+    path: results/rnaseh_no_overlap/
+  rnaseh_signal:
+    path: results/rnaseh_signal/
   rnaseh_filtered_peaks:
     path: results/rnaseh_filtered/
+    deprecated: true
+    note: Compatibility alias for rnaseh_no_overlap, not proof of quantitative RNaseH sensitivity.
   replicate_consensus:
     path: results/replicate_consensus/
   qc:
@@ -57,7 +65,10 @@ safety:
     - results/clean_data/
     - results/aligned_data/
     - results/bigwig/
+    - results/bigwig_common_scale/
     - results/macs3_results/
+    - results/rnaseh_no_overlap/
+    - results/rnaseh_signal/
     - results/rnaseh_filtered/
     - results/replicate_consensus/
     - results/qc/
@@ -69,7 +80,7 @@ notes:
   - Always run a dry-run before changing workflow logic or starting a full run.
   - R-loop reference files must be genome-build consistent, especially bowtie2 index, blacklist, and MACS3 gsize.
   - Broad peak mode is the default because DRIP-seq often produces broad R-loop domains.
-  - Use RNase H controls for specificity filtering when the experimental design includes them.
+  - Treat rnaseh_no_overlap as bedtools overlap filtering only; use rnaseh_signal outputs and common-scale tracks for quantitative RNaseH-depletion interpretation.
   - Prefer fastq_manifest for irregular FASTQ names or unmerged lane-level data.
 
 required_config_keys:
@@ -86,6 +97,17 @@ optional_config_keys:
   - blacklist
   - mitochondrial_chromosomes
   - enable_rnaseh_subtraction
+  - enable_common_scale_bigwig
+  - common_scale_normalization
+  - signal_scale_factors_tsv
+  - signal_scale_factor_method
+  - spikein_genome
+  - spikein_method
+  - spikein_reference_sample
+  - peak_duplicate_mode
+  - dup_threshold_for_dedup
+  - rnaseh_signal_min_fold_change
+  - rnaseh_signal_min_treatment_signal
   - enable_insert_size_qc
   - enable_multiqc
   - fastp_extra
@@ -118,10 +140,18 @@ generated_outputs:
     - results/aligned_data/{sample}.sorted.rmdup.filtered.bam.bai
   tracks:
     - results/bigwig/{sample}.sorted.rmdup.filtered.CPM.bw
+  common_scale_tracks:
+    - results/bigwig_common_scale/{sample}.sorted.rmdup.filtered.scaled.bw
   peaks:
     - results/macs3_results/broad/{sample}_peaks.broadPeak
     - results/macs3_results/narrow/{sample}_peaks.narrowPeak
-  rnaseh_filtered:
+  rnaseh_no_overlap:
+    - results/rnaseh_no_overlap/{sample}_rnaseh_no_overlap.broadPeak
+    - results/rnaseh_no_overlap/{sample}_rnaseh_no_overlap.narrowPeak
+  rnaseh_signal:
+    - results/rnaseh_signal/{sample}_rnaseh_signal.tsv
+    - results/rnaseh_signal/{sample}_rnaseh_depleted.bed
+  rnaseh_filtered_deprecated:
     - results/rnaseh_filtered/{sample}_rnaseh_sensitive.broadPeak
     - results/rnaseh_filtered/{sample}_rnaseh_sensitive.narrowPeak
   consensus:
@@ -131,6 +161,8 @@ generated_outputs:
     - results/qc/mark_duplicates/{sample}.metrics.txt
     - results/qc/insert_size/{sample}.insert_size_metrics.txt
     - results/qc/frip/{sample}.frip.txt
+    - results/qc/bigwig_scale/{sample}.bigwig_header.tsv
+    - results/qc/rnaseh_sensitivity/{sample}.summary.tsv
   reports:
     - results/reports/multiqc_report.html
   logs:

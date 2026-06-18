@@ -25,9 +25,16 @@ class WorkflowPaths:
         self.mark_duplicates_qc = self.result("qc", "mark_duplicates")
         self.insert_size_qc = self.result("qc", "insert_size")
         self.frip_qc = self.result("qc", "frip")
+        self.bigwig_scale_qc = self.result("qc", "bigwig_scale")
+        self.rnaseh_sensitivity_qc = self.result("qc", "rnaseh_sensitivity")
         self.bigwig = self.result("bigwig")
+        self.bigwig_common_scale = self.result("bigwig_common_scale")
+        self.bigwig_debug_raw = self.result("bigwig_debug", "raw_scale")
+        self.bigwig_debug_dedup = self.result("bigwig_debug", "dedup_effective_fragments")
         self.macs3_results = self.result("macs3_results")
+        self.rnaseh_no_overlap = self.result("rnaseh_no_overlap")
         self.rnaseh_filtered = self.result("rnaseh_filtered")
+        self.rnaseh_signal = self.result("rnaseh_signal")
         self.replicate_consensus = self.result("replicate_consensus")
         self.reports = self.result("reports")
         self.logs = self.result("logs")
@@ -54,17 +61,49 @@ class WorkflowPaths:
     def alignment_filtered_bai(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.filtered.bam.bai"
 
+    def markdup_bam(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.markdup.bam"
+
+    def markdup_bai(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.markdup.bam.bai"
+
     def dedup_bam(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.rmdup.bam"
 
     def dedup_bai(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.rmdup.bam.bai"
 
+    def signal_bam(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.markdup.filtered.bam"
+
+    def signal_bai(self, sample):
+        return f"{self.aligned_data}/{sample}.sorted.markdup.filtered.bam.bai"
+
     def filtered_bam(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.rmdup.filtered.bam"
 
     def filtered_bai(self, sample):
         return f"{self.aligned_data}/{sample}.sorted.rmdup.filtered.bam.bai"
+
+    def peak_bam(self, sample, peak_duplicate_mode):
+        """Return the BAM for peak calling: markdup when keep_marked/auto, rmdup when remove."""
+        if peak_duplicate_mode in ("keep_marked", "auto"):
+            return self.signal_bam(sample)
+        return self.filtered_bam(sample)
+
+    def peak_bai(self, sample, peak_duplicate_mode):
+        if peak_duplicate_mode in ("keep_marked", "auto"):
+            return self.signal_bai(sample)
+        return self.filtered_bai(sample)
+
+    def spikein_bam(self, sample):
+        return f"{self.aligned_data}/{sample}.spikein.sorted.bam"
+
+    def spikein_bai(self, sample):
+        return f"{self.aligned_data}/{sample}.spikein.sorted.bam.bai"
+
+    def spikein_counts(self, sample):
+        return f"{self.bigwig_scale_qc}/{sample}.spikein_counts.tsv"
 
     def fastp_html(self, sample):
         return f"{self.fastp_qc}/{sample}.html"
@@ -85,7 +124,25 @@ class WorkflowPaths:
         return f"{self.frip_qc}/{sample}.frip.txt"
 
     def bigwig_track(self, sample):
-        return f"{self.bigwig}/{sample}.sorted.rmdup.filtered.CPM.bw"
+        return f"{self.bigwig}/{sample}.sorted.markdup.filtered.CPM.bw"
+
+    def common_scale_bigwig_track(self, sample):
+        return f"{self.bigwig_common_scale}/{sample}.sorted.markdup.filtered.scaled.bw"
+
+    def debug_raw_bigwig_track(self, sample):
+        return f"{self.bigwig_debug_raw}/{sample}.sorted.markdup.filtered.raw.bw"
+
+    def debug_dedup_bigwig_track(self, sample):
+        return f"{self.bigwig_debug_dedup}/{sample}.sorted.rmdup.filtered.scaled.bw"
+
+    def signal_scale_factors(self):
+        return f"{self.bigwig_scale_qc}/signal_scale_factors.{CTX.signal_scale_factor_method}.tsv"
+
+    def dedup_scale_factors(self):
+        return f"{self.bigwig_scale_qc}/dedup_scale_factors.effective_fragments.tsv"
+
+    def bigwig_header_qc(self, sample):
+        return f"{self.bigwig_scale_qc}/{sample}.bigwig_header.tsv"
 
     def peak(self, sample):
         peak_type = str(config.get("peak_type", "broad")).lower()
@@ -93,14 +150,28 @@ class WorkflowPaths:
             return f"{self.macs3_results}/narrow/{sample}_peaks.narrowPeak"
         return f"{self.macs3_results}/broad/{sample}_peaks.broadPeak"
 
+    def rnaseh_no_overlap_peak(self, sample):
+        peak_type = str(config.get("peak_type", "broad")).lower()
+        suffix = "narrowPeak" if peak_type == "narrow" else "broadPeak"
+        return f"{self.rnaseh_no_overlap}/{sample}_rnaseh_no_overlap.{suffix}"
+
     def rnaseh_sensitive_peak(self, sample):
         peak_type = str(config.get("peak_type", "broad")).lower()
         suffix = "narrowPeak" if peak_type == "narrow" else "broadPeak"
         return f"{self.rnaseh_filtered}/{sample}_rnaseh_sensitive.{suffix}"
 
+    def rnaseh_signal_table(self, sample):
+        return f"{self.rnaseh_signal}/{sample}_rnaseh_signal.tsv"
+
+    def rnaseh_depleted_peak(self, sample):
+        return f"{self.rnaseh_signal}/{sample}_rnaseh_depleted.bed"
+
+    def rnaseh_sensitivity_summary(self, sample):
+        return f"{self.rnaseh_sensitivity_qc}/{sample}.summary.tsv"
+
     def final_peak(self, sample):
         if CTX.enable_rnaseh_subtraction and CTX.rnaseh_controls.get(sample):
-            return self.rnaseh_sensitive_peak(sample)
+            return self.rnaseh_no_overlap_peak(sample)
         return self.peak(sample)
 
     def replicate_consensus_peak(self, group):
@@ -325,6 +396,93 @@ def parse_positive_int_config(key, default):
     return value
 
 
+def parse_nonnegative_float_config(key, default):
+    try:
+        value = float(config.get(key, default))
+    except (TypeError, ValueError):
+        raise ValueError(f"config['{key}'] must be a number.")
+    if value < 0:
+        raise ValueError(f"config['{key}'] must be >= 0.")
+    return value
+
+
+def parse_positive_float_config(key, default):
+    value = parse_nonnegative_float_config(key, default)
+    if value <= 0:
+        raise ValueError(f"config['{key}'] must be > 0.")
+    return value
+
+
+def normalize_common_scale_normalization(value):
+    raw = str(value or "None").strip()
+    if raw.lower() in {"none", "raw"}:
+        return "None"
+    if raw.lower() == "rpgc":
+        return "RPGC"
+    raise ValueError("config['common_scale_normalization'] must be one of: None, raw, RPGC.")
+
+
+def parse_scale_factors(path, samples):
+    path = str(path or "").strip()
+    if not path:
+        raise ValueError(
+            "enable_common_scale_bigwig requires config['signal_scale_factors_tsv'] with columns: sample, scale_factor."
+        )
+    tsv = Path(path)
+    if not tsv.exists():
+        raise ValueError(f"signal_scale_factors_tsv does not exist: {tsv}")
+
+    factors = {}
+    with tsv.open(newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        missing = {"sample", "scale_factor"} - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(
+                "signal_scale_factors_tsv is missing column(s): " + ", ".join(sorted(missing))
+            )
+        for row in reader:
+            sample = (row.get("sample") or "").strip()
+            if not sample:
+                continue
+            try:
+                scale_factor = float(row.get("scale_factor", ""))
+            except ValueError:
+                raise ValueError(f"Invalid scale_factor for sample '{sample}' in {tsv}.")
+            if scale_factor <= 0:
+                raise ValueError(f"scale_factor must be > 0 for sample '{sample}' in {tsv}.")
+            factors[sample] = scale_factor
+
+    missing_samples = sorted(set(samples) - set(factors))
+    if missing_samples:
+        raise ValueError(
+            "signal_scale_factors_tsv is missing sample(s): " + ", ".join(missing_samples)
+        )
+    return factors
+
+
+
+
+def normalize_scale_factor_method(value):
+    method = str(value or "effective_fragments").strip().lower()
+    validate_choices([method], {"effective_fragments", "raw", "tsv", "spikein"}, "signal_scale_factor_method")
+    return method
+
+
+def normalize_duplicate_mode(key, default, allowed):
+    mode = str(config.get(key, default) or default).strip().lower()
+    validate_choices([mode], allowed, key)
+    return mode
+
+
+def validate_mark_duplicates_extra():
+    extra = str(config.get("mark_duplicates_extra", "") or "")
+    if "REMOVE_DUPLICATES" in extra.upper():
+        raise ValueError(
+            "config['mark_duplicates_extra'] must not contain REMOVE_DUPLICATES after duplicate branch split. "
+            "Use peak_duplicate_mode and signal_duplicate_mode instead."
+        )
+    return extra
+
 def build_workflow_context(config):
     mode = str(config.get("mode", "pe")).lower()
     validate_choices([mode], {"pe", "se"}, "mode")
@@ -341,6 +499,28 @@ def build_workflow_context(config):
 
     groups = valid_groups(sample_data.groups, sample_data.treatments)
     consensus_min_support_value = parse_positive_int_config("consensus_min_support", 2)
+    enable_common_scale_bigwig = config_bool("enable_common_scale_bigwig", False)
+    common_scale_normalization = normalize_common_scale_normalization(config.get("common_scale_normalization", "None"))
+    signal_scale_factor_method = normalize_scale_factor_method(config.get("signal_scale_factor_method", "effective_fragments"))
+    if signal_scale_factor_method == "tsv":
+        parse_scale_factors(config.get("signal_scale_factors_tsv", ""), sample_data.samples)
+    spikein_method = ""
+    spikein_reference_sample = ""
+    if signal_scale_factor_method == "spikein":
+        spikein_genome = str(config.get("spikein_genome", "") or "").strip()
+        if not spikein_genome:
+            raise ValueError("signal_scale_factor_method: spikein requires config['spikein_genome'].")
+        spikein_method = str(config.get("spikein_method", "ratio") or "ratio").strip().lower()
+        validate_choices([spikein_method], {"ratio", "rpm"}, "spikein_method")
+        if spikein_method == "ratio":
+            spikein_reference_sample = str(config.get("spikein_reference_sample", "") or "").strip()
+            if not spikein_reference_sample:
+                raise ValueError("spikein_method: ratio requires config['spikein_reference_sample'].")
+            if spikein_reference_sample not in sample_data.samples:
+                raise ValueError(f"spikein_reference_sample '{spikein_reference_sample}' is not a declared sample.")
+    mark_duplicates_extra = validate_mark_duplicates_extra()
+    signal_duplicate_mode = normalize_duplicate_mode("signal_duplicate_mode", "keep_marked", {"keep_marked"})
+    peak_duplicate_mode = normalize_duplicate_mode("peak_duplicate_mode", "auto", {"remove", "keep_marked", "auto"})
 
     return SimpleNamespace(
         mode=mode,
@@ -359,6 +539,19 @@ def build_workflow_context(config):
         rnaseh_controls=sample_data.rnaseh_controls,
         consensus_min_support=consensus_min_support_value,
         enable_rnaseh_subtraction=config_bool("enable_rnaseh_subtraction", True),
+        enable_common_scale_bigwig=enable_common_scale_bigwig,
+        common_scale_normalization=common_scale_normalization,
+        signal_scale_factor_method=signal_scale_factor_method,
+        spikein_method=spikein_method,
+        spikein_reference_sample=spikein_reference_sample,
+        dup_threshold_for_dedup=parse_nonnegative_float_config("dup_threshold_for_dedup", 0.90),
+        mark_duplicates_extra=mark_duplicates_extra,
+        signal_duplicate_mode=signal_duplicate_mode,
+        peak_duplicate_mode=peak_duplicate_mode,
+        write_deprecated_rnaseh_sensitive_alias=config_bool("write_deprecated_rnaseh_sensitive_alias", False),
+        enable_bigwig_debug_tracks=config_bool("enable_bigwig_debug_tracks", False),
+        rnaseh_signal_min_fold_change=parse_positive_float_config("rnaseh_signal_min_fold_change", 2.0),
+        rnaseh_signal_min_treatment_signal=parse_nonnegative_float_config("rnaseh_signal_min_treatment_signal", 0.0),
         enable_insert_size_qc=config_bool("enable_insert_size_qc", mode == "pe"),
         enable_multiqc=config_bool("enable_multiqc", True),
     )
@@ -372,22 +565,48 @@ def print_workflow_summary(ctx):
     print("Samples: " + ",".join(ctx.samples))
     print("Treatments: " + ",".join(ctx.treatments))
     print("Replicate groups: " + (",".join(ctx.groups) if ctx.groups else "none"))
-    print("RNase H subtraction: " + ("enabled" if ctx.enable_rnaseh_subtraction else "disabled"))
+    print("RNase H no-overlap filtering: " + ("enabled" if ctx.enable_rnaseh_subtraction else "disabled"))
+    print("Common-scale bigWigs: " + ("enabled (" + ctx.common_scale_normalization + ", scale=" + ctx.signal_scale_factor_method + ")" if ctx.enable_common_scale_bigwig else "disabled"))
+    print("Signal duplicate mode: " + ctx.signal_duplicate_mode)
+    print("Peak duplicate mode: " + ctx.peak_duplicate_mode + (" (use markdup BAM; warn if dup rate >= " + str(int(ctx.dup_threshold_for_dedup * 100)) + "%)" if ctx.peak_duplicate_mode == "auto" else ""))
+    if ctx.signal_scale_factor_method == "spikein":
+        print("Spike-in method: " + ctx.spikein_method + (", reference sample=" + ctx.spikein_reference_sample if ctx.spikein_method == "ratio" else ""))
+    print("BigWig debug tracks: " + ("enabled" if ctx.enable_bigwig_debug_tracks else "disabled"))
     print("MultiQC: " + ("enabled" if ctx.enable_multiqc else "disabled"))
 
 
 def all_outputs(ctx):
     outputs = [
-        expand(PATHS.filtered_bam("{sample}"), sample=ctx.samples),
-        expand(PATHS.filtered_bai("{sample}"), sample=ctx.samples),
+        expand(PATHS.signal_bam("{sample}"), sample=ctx.samples),
+        expand(PATHS.signal_bai("{sample}"), sample=ctx.samples),
         expand(PATHS.bigwig_track("{sample}"), sample=ctx.samples),
+        expand(PATHS.bigwig_header_qc("{sample}"), sample=ctx.samples),
         expand(PATHS.peak("{sample}"), sample=ctx.treatments),
         expand(PATHS.frip("{sample}"), sample=ctx.treatments),
         expand(PATHS.replicate_consensus_peak("{group}"), group=ctx.groups),
     ]
+    # Dedup BAMs are needed when peak calling removes duplicates or debug tracks are enabled.
+    if ctx.peak_duplicate_mode == "remove" or ctx.enable_bigwig_debug_tracks:
+        outputs.append(expand(PATHS.filtered_bam("{sample}"), sample=ctx.samples))
+        outputs.append(expand(PATHS.filtered_bai("{sample}"), sample=ctx.samples))
+    if ctx.signal_scale_factor_method == "spikein":
+        outputs.append(expand(PATHS.spikein_bam("{sample}"), sample=ctx.samples))
+        outputs.append(expand(PATHS.spikein_counts("{sample}"), sample=ctx.samples))
+    if ctx.enable_common_scale_bigwig:
+        outputs.append(PATHS.signal_scale_factors())
+        outputs.append(expand(PATHS.common_scale_bigwig_track("{sample}"), sample=ctx.samples))
+    if ctx.enable_bigwig_debug_tracks:
+        outputs.append(PATHS.dedup_scale_factors())
+        outputs.append(expand(PATHS.debug_raw_bigwig_track("{sample}"), sample=ctx.samples))
+        outputs.append(expand(PATHS.debug_dedup_bigwig_track("{sample}"), sample=ctx.samples))
     if ctx.enable_rnaseh_subtraction:
         rnaseh_treatments = [sample for sample in ctx.treatments if ctx.rnaseh_controls.get(sample)]
-        outputs.append(expand(PATHS.rnaseh_sensitive_peak("{sample}"), sample=rnaseh_treatments))
+        outputs.append(expand(PATHS.rnaseh_no_overlap_peak("{sample}"), sample=rnaseh_treatments))
+        if ctx.write_deprecated_rnaseh_sensitive_alias:
+            outputs.append(expand(PATHS.rnaseh_sensitive_peak("{sample}"), sample=rnaseh_treatments))
+        outputs.append(expand(PATHS.rnaseh_signal_table("{sample}"), sample=rnaseh_treatments))
+        outputs.append(expand(PATHS.rnaseh_depleted_peak("{sample}"), sample=rnaseh_treatments))
+        outputs.append(expand(PATHS.rnaseh_sensitivity_summary("{sample}"), sample=rnaseh_treatments))
     if ctx.mode == "pe" and ctx.enable_insert_size_qc:
         outputs.append(expand(PATHS.insert_size_metrics("{sample}"), sample=ctx.samples))
     if ctx.enable_multiqc:
@@ -429,13 +648,13 @@ def macs3_extra():
     if config.get("macs3_extra"):
         return config.get("macs3_extra")
     if CTX.peak_type == "narrow":
-        return "--keep-dup all -q 0.01"
-    return "--broad --broad-cutoff 0.1 --keep-dup all -q 0.05"
+        return "-q 0.01"
+    return "--broad --broad-cutoff 0.1 -q 0.05"
 
 
 def macs3_control_input(wildcards):
     control = CTX.controls.get(wildcards.sample)
-    return PATHS.filtered_bam(control) if control else []
+    return PATHS.peak_bam(control, CTX.peak_duplicate_mode) if control else []
 
 
 def macs3_control_arg(wildcards, input):
@@ -446,6 +665,48 @@ def macs3_control_arg(wildcards, input):
 
 def rnaseh_control_peak(wildcards):
     return PATHS.peak(CTX.rnaseh_controls[wildcards.sample])
+
+
+def peak_input_bam(wildcards):
+    """Return the BAM for MACS3 peak calling based on peak_duplicate_mode."""
+    return PATHS.peak_bam(wildcards.sample, CTX.peak_duplicate_mode)
+
+
+def peak_input_bai(wildcards):
+    return PATHS.peak_bai(wildcards.sample, CTX.peak_duplicate_mode)
+
+
+def rnaseh_signal_bigwig(sample):
+    if CTX.enable_common_scale_bigwig:
+        return PATHS.common_scale_bigwig_track(sample)
+    return PATHS.bigwig_track(sample)
+
+
+def rnaseh_signal_treatment_bigwig(wildcards):
+    return rnaseh_signal_bigwig(wildcards.sample)
+
+
+def rnaseh_signal_control_bigwig(wildcards):
+    return rnaseh_signal_bigwig(CTX.rnaseh_controls[wildcards.sample])
+
+
+def rnaseh_signal_track_type():
+    return "common_scale" if CTX.enable_common_scale_bigwig else "CPM_warning"
+
+
+def scale_factor_from_table_shell(sample_expr, table_expr):
+    return "$(awk -F '\t' -v sample=" + sample_expr + " 'NR==1 {next} $1==sample {print $3; found=1; exit} END {if (!found) exit 2}' " + table_expr + ")"
+
+
+def common_scale_base_args():
+    extra = str(config.get("common_scale_bam_coverage_extra", "--binSize 10") or "--binSize 10").strip()
+    args = f"{extra} --normalizeUsing {CTX.common_scale_normalization}"
+    if CTX.common_scale_normalization == "RPGC":
+        effective_genome_size = str(config.get("effective_genome_size", config.get("gsize", "")) or "").strip()
+        if not effective_genome_size:
+            raise ValueError("common_scale_normalization: RPGC requires config['effective_genome_size'] or config['gsize'].")
+        args += f" --effectiveGenomeSize {shlex.quote(effective_genome_size)}"
+    return args
 
 
 def consensus_min_support(wildcards):

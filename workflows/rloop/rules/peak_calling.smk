@@ -1,7 +1,7 @@
 rule macs3_callpeak:
     input:
-        bam=PATHS.filtered_bam("{sample}"),
-        bai=PATHS.filtered_bai("{sample}"),
+        bam=peak_input_bam,
+        bai=peak_input_bai,
         control=macs3_control_input
     output:
         PATHS.peak("{sample}")
@@ -30,6 +30,7 @@ macs3 callpeak \
     -f {params.fmt} \
     -g {params.genome_size:q} \
     -n {params.name:q} \
+    --keep-dup all \
     --outdir {params.outdir:q} \
     {params.extra} \
     &> {log:q}
@@ -38,18 +39,18 @@ test -s {output:q}
 
 
 if ENABLE_RNASEH_SUBTRACTION:
-    rule rnaseh_subtract_peaks:
+    rule rnaseh_no_overlap_peaks:
         input:
             treatment=PATHS.peak("{sample}"),
             rnaseh=rnaseh_control_peak
         output:
-            PATHS.rnaseh_sensitive_peak("{sample}")
+            no_overlap=PATHS.rnaseh_no_overlap_peak("{sample}")
         wildcard_constraints:
             sample=TREATMENT_PATTERN
         params:
             blacklist=lambda wildcards: str(config.get("blacklist", "") or "")
         log:
-            PATHS.log("{sample}.rnaseh_subtract")
+            PATHS.log("{sample}.rnaseh_no_overlap")
         threads:
             workflow_threads("rnaseh_subtract", 2)
         conda:
@@ -57,12 +58,18 @@ if ENABLE_RNASEH_SUBTRACTION:
         shell:
             r"""
 set -euo pipefail
-mkdir -p $(dirname {output:q}) $(dirname {log:q})
+mkdir -p $(dirname {output.no_overlap:q}) $(dirname {log:q})
 
-tmpbase="$(dirname {output:q})/.tmp"
+tmpbase="$(dirname {output.no_overlap:q})/.tmp"
 mkdir -p "$tmpbase"
 tmpdir=$(mktemp -d "$tmpbase/{wildcards.sample}.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
+
+{{
+    echo "RNase H no-overlap filtering for {wildcards.sample}."
+    echo "Method: bedtools intersect -v against merged RNase H control peaks."
+    echo "Interpretation: this is overlap filtering only, not a quantitative RNaseH-depletion test."
+}} > {log:q}
 
 awk 'BEGIN{{OFS="\t"}} NF >= 3 && $2 < $3 {{print}}' {input.treatment:q} \
     | sort -k1,1 -k2,2n \
@@ -73,19 +80,87 @@ awk 'BEGIN{{OFS="\t"}} NF >= 3 && $2 < $3 {{print $1, $2, $3}}' {input.rnaseh:q}
     > "$tmpdir/rnaseh.merged.bed"
 
 if [[ -s "$tmpdir/rnaseh.merged.bed" ]]; then
-    bedtools intersect -v -a "$tmpdir/treatment.sorted.bed" -b "$tmpdir/rnaseh.merged.bed" > "$tmpdir/rnaseh_sensitive.bed" 2> {log:q}
+    bedtools intersect -v -a "$tmpdir/treatment.sorted.bed" -b "$tmpdir/rnaseh.merged.bed" > "$tmpdir/rnaseh_no_overlap.bed" 2>> {log:q}
 else
-    cp "$tmpdir/treatment.sorted.bed" "$tmpdir/rnaseh_sensitive.bed"
-    echo "RNase H control peak file is empty after BED cleanup; copied treatment peaks." > {log:q}
+    cp "$tmpdir/treatment.sorted.bed" "$tmpdir/rnaseh_no_overlap.bed"
+    echo "RNase H control peak file is empty after BED cleanup; copied treatment peaks." >> {log:q}
 fi
 
-if [[ -n {params.blacklist:q} ]]; then
-    bedtools intersect -v -a "$tmpdir/rnaseh_sensitive.bed" -b {params.blacklist:q} > {output:q} 2>> {log:q}
+blacklist={params.blacklist:q}
+if [[ -n "$blacklist" ]]; then
+    bedtools intersect -v -a "$tmpdir/rnaseh_no_overlap.bed" -b "$blacklist" > {output.no_overlap:q} 2>> {log:q}
 else
-    cp "$tmpdir/rnaseh_sensitive.bed" {output:q}
+    cp "$tmpdir/rnaseh_no_overlap.bed" {output.no_overlap:q}
 fi
 
+test -e {output.no_overlap:q}
+            """
+
+    if CTX.write_deprecated_rnaseh_sensitive_alias:
+        rule rnaseh_sensitive_alias:
+            input:
+                PATHS.rnaseh_no_overlap_peak("{sample}")
+            output:
+                PATHS.rnaseh_sensitive_peak("{sample}")
+            wildcard_constraints:
+                sample=TREATMENT_PATTERN
+            log:
+                PATHS.log("{sample}.rnaseh_sensitive_alias")
+            conda:
+                ENV
+            shell:
+                r"""
+set -euo pipefail
+mkdir -p $(dirname {output:q}) $(dirname {log:q})
+cp {input:q} {output:q}
+echo "Deprecated compatibility alias for RNase H no-overlap peaks; not quantitative RNaseH sensitivity." > {log:q}
 test -e {output:q}
+                """
+
+    rule rnaseh_signal:
+        input:
+            treatment_peaks=PATHS.peak("{sample}"),
+            no_overlap=PATHS.rnaseh_no_overlap_peak("{sample}"),
+            treatment_bw=rnaseh_signal_treatment_bigwig,
+            rnaseh_bw=rnaseh_signal_control_bigwig
+        output:
+            table=PATHS.rnaseh_signal_table("{sample}"),
+            bed=PATHS.rnaseh_depleted_peak("{sample}"),
+            summary=PATHS.rnaseh_sensitivity_summary("{sample}")
+        wildcard_constraints:
+            sample=TREATMENT_PATTERN
+        params:
+            script="scripts/rnaseh_signal.py",
+            rnaseh_sample=lambda wildcards: CTX.rnaseh_controls[wildcards.sample],
+            min_fc=lambda wildcards: CTX.rnaseh_signal_min_fold_change,
+            min_treatment_signal=lambda wildcards: CTX.rnaseh_signal_min_treatment_signal,
+            signal_track_type=lambda wildcards: rnaseh_signal_track_type()
+        log:
+            PATHS.log("{sample}.rnaseh_signal")
+        threads:
+            workflow_threads("rnaseh_signal", 2)
+        conda:
+            ENV
+        shell:
+            r"""
+set -euo pipefail
+mkdir -p $(dirname {output.table:q}) $(dirname {output.bed:q}) $(dirname {output.summary:q}) $(dirname {log:q})
+python {params.script:q} \
+    --sample {wildcards.sample:q} \
+    --rnaseh-sample {params.rnaseh_sample:q} \
+    --treatment-peaks {input.treatment_peaks:q} \
+    --no-overlap-peaks {input.no_overlap:q} \
+    --treatment-bw {input.treatment_bw:q} \
+    --rnaseh-bw {input.rnaseh_bw:q} \
+    --output-tsv {output.table:q} \
+    --output-bed {output.bed:q} \
+    --summary {output.summary:q} \
+    --min-fold-change {params.min_fc} \
+    --min-treatment-signal {params.min_treatment_signal} \
+    --signal-track-type {params.signal_track_type:q} \
+    &> {log:q}
+test -s {output.table:q}
+test -s {output.summary:q}
             """
 
 

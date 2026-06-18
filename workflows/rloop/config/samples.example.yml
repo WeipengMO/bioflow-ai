@@ -5,6 +5,7 @@
 # group names biological treatment replicates for consensus peaks.
 # control points from a treatment to a MACS3 background control.
 # rnaseh_control points from a treatment to an RNase H-treated specificity control.
+# The workflow uses this for peak no-overlap filtering and signal comparison; no-overlap alone is not proof of RNaseH depletion.
 
 WT_DRIP_rep1:
   role: treatment

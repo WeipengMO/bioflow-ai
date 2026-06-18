@@ -1,8 +1,8 @@
 if MODE == "pe" and ENABLE_INSERT_SIZE_QC:
     rule collect_insert_size_metrics:
         input:
-            bam=PATHS.filtered_bam("{sample}"),
-            bai=PATHS.filtered_bai("{sample}")
+            bam=PATHS.signal_bam("{sample}"),
+            bai=PATHS.signal_bai("{sample}")
         output:
             metrics=PATHS.insert_size_metrics("{sample}"),
             histogram=PATHS.insert_size_histogram("{sample}")
@@ -40,8 +40,8 @@ test -s {output.histogram:q}
 
 rule frip_score:
     input:
-        bam=PATHS.filtered_bam("{sample}"),
-        bai=PATHS.filtered_bai("{sample}"),
+        bam=PATHS.signal_bam("{sample}"),
+        bai=PATHS.signal_bai("{sample}"),
         peaks=lambda wildcards: PATHS.final_peak(wildcards.sample)
     output:
         PATHS.frip("{sample}")
@@ -79,7 +79,12 @@ if ENABLE_MULTIQC:
             fastp=expand(PATHS.fastp_json("{sample}"), sample=SAMPLES),
             markdup=expand(PATHS.mark_duplicates_metrics("{sample}"), sample=SAMPLES),
             insert_size=expand(PATHS.insert_size_metrics("{sample}"), sample=SAMPLES) if MODE == "pe" and ENABLE_INSERT_SIZE_QC else [],
-            frip=expand(PATHS.frip("{sample}"), sample=TREATMENTS)
+            frip=expand(PATHS.frip("{sample}"), sample=TREATMENTS),
+            bigwig_scale=expand(PATHS.bigwig_header_qc("{sample}"), sample=SAMPLES),
+            rnaseh_sensitivity=expand(
+                PATHS.rnaseh_sensitivity_summary("{sample}"),
+                sample=[sample for sample in TREATMENTS if CTX.rnaseh_controls.get(sample)]
+            ) if ENABLE_RNASEH_SUBTRACTION else []
         output:
             PATHS.multiqc_report()
         params:
@@ -99,6 +104,7 @@ multiqc \
     {OUTDIR:q} \
     -o {params.outdir:q} \
     -n multiqc_report.html \
+    --force \
     {params.extra} \
     &> {log:q}
 test -s {output:q}

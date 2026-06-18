@@ -44,7 +44,7 @@ Set broad peak mode unless the experiment expects sharp sites:
 
 ```yaml
 peak_type: broad
-enable_rnaseh_subtraction: true
+enable_rnaseh_subtraction: true  # writes rnaseh_no_overlap plus deprecated rnaseh_sensitive alias
 ```
 
 ## Inspect failed rule
@@ -71,4 +71,27 @@ Then inspect `config/fastq_manifest.tsv` and set:
 
 ```yaml
 fastq_manifest: config/fastq_manifest.tsv
+```
+
+## Set up spike-in normalization
+
+1. Run `bash scripts/build_spikein_index.sh` to download E. coli K-12 MG1655 and build a Bowtie2 index.
+2. In `config/config.yml`, set:
+   ```yaml
+   signal_scale_factor_method: spikein
+   spikein_genome: data/spikein/ecoli_mg1655
+   spikein_method: ratio
+   spikein_reference_sample: <reference_sample_name>
+   enable_common_scale_bigwig: true
+   ```
+3. Dry-run with `snakemake -np --use-conda`.
+
+## Set up CUT&Tag duplicate handling
+
+Default `peak_duplicate_mode: auto` uses markdup BAM for peak calling with `--keep-dup all`.
+Only switch to `peak_duplicate_mode: remove` when Picard duplication rate is extremely high (80-90%+):
+
+```yaml
+peak_duplicate_mode: auto  # auto | keep_marked | remove
+dup_threshold_for_dedup: 0.90
 ```
