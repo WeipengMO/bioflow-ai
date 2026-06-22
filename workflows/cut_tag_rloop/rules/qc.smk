@@ -49,6 +49,9 @@ rule frip_score:
         sample=TREATMENT_PATTERN
     log:
         PATHS.log("{sample}.frip")
+    params:
+        script="scripts/frip_score.py",
+        mode=lambda wildcards: MODE
     threads:
         workflow_threads("frip", 4)
     conda:
@@ -57,18 +60,14 @@ rule frip_score:
         r"""
 set -euo pipefail
 mkdir -p $(dirname {output:q}) $(dirname {log:q})
-total=$(samtools view -@ {threads} -c {input.bam:q} 2> {log:q})
-if [[ -s {input.peaks:q} ]]; then
-    in_peaks=$(bedtools intersect -u -abam {input.bam:q} -b {input.peaks:q} 2>> {log:q} | samtools view -@ {threads} -c - 2>> {log:q})
-else
-    in_peaks=0
-    echo "Peak file is empty; FRiP alignments_in_peaks set to 0: {input.peaks}" >> {log:q}
-fi
-awk -v sample="{wildcards.sample}" -v total="$total" -v in_peaks="$in_peaks" 'BEGIN{{
-    frip = total > 0 ? in_peaks / total : 0
-    print "sample\ttotal_alignments\talignments_in_peaks\tfrip"
-    printf "%s\t%d\t%d\t%.6f\n", sample, total, in_peaks, frip
-}}' > {output:q}
+python {params.script:q} \
+    --sample {wildcards.sample:q} \
+    --mode {params.mode:q} \
+    --bam {input.bam:q} \
+    --peaks {input.peaks:q} \
+    --output {output:q} \
+    --threads {threads} \
+    &> {log:q}
 test -s {output:q}
         """
 
@@ -79,6 +78,7 @@ rule rloop_qc_summary:
         peaks=expand(PATHS.peak("{sample}"), sample=TREATMENTS),
         frip=expand(PATHS.frip("{sample}"), sample=TREATMENTS),
         spikein=PATHS.normalization_metrics() if CTX.has_spikein else [],
+        rnaseh_ratio_tables=expand(PATHS.rnaseh_ratio_table("{sample}"), sample=rnaseh_treatments(CTX)) if CTX.rnaseh_enabled and CTX.rnaseh_mode in {"ratio", "both"} else [],
         rnaseh_ratio=expand(PATHS.rnaseh_ratio_summary("{sample}"), sample=rnaseh_treatments(CTX)) if CTX.rnaseh_enabled and CTX.rnaseh_mode in {"ratio", "both"} else [],
         rnaseh_deseq2=expand(PATHS.rnaseh_deseq2_tsv("{contrast}"), contrast=rnaseh_contrasts(CTX)) if CTX.rnaseh_enabled and CTX.rnaseh_mode in {"deseq2", "both"} and CTX.count_matrix_enabled else []
     output:
@@ -87,6 +87,9 @@ rule rloop_qc_summary:
         sample_pca=PATHS.sample_pca(),
         peak_width_distribution=PATHS.peak_width_distribution(),
         rnaseh_depletion_summary=PATHS.rnaseh_depletion_summary(),
+        rnaseh_specificity_summary=PATHS.rnaseh_specificity_summary(),
+        rnaseh_signal_scatter=PATHS.rnaseh_signal_scatter(),
+        rnaseh_depletion_fraction=PATHS.rnaseh_depletion_fraction_plot(),
         spikein_summary=PATHS.spikein_summary(),
         blacklist_mito_summary=PATHS.blacklist_mito_summary(),
         frip_fragment_level=PATHS.frip_fragment_level()
@@ -108,6 +111,7 @@ python {params.script:q} \
     --peaks {input.peaks:q} \
     --frip {input.frip:q} \
     --spikein {params.spikein:q} \
+    --rnaseh-ratio-tables {input.rnaseh_ratio_tables:q} \
     --rnaseh-ratio-summaries {input.rnaseh_ratio:q} \
     --rnaseh-deseq2 {input.rnaseh_deseq2:q} \
     --replicate-correlation {output.replicate_correlation:q} \
@@ -115,6 +119,9 @@ python {params.script:q} \
     --sample-pca {output.sample_pca:q} \
     --peak-width-distribution {output.peak_width_distribution:q} \
     --rnaseh-depletion-summary {output.rnaseh_depletion_summary:q} \
+    --rnaseh-specificity-summary {output.rnaseh_specificity_summary:q} \
+    --rnaseh-signal-scatter {output.rnaseh_signal_scatter:q} \
+    --rnaseh-depletion-fraction {output.rnaseh_depletion_fraction:q} \
     --spikein-summary {output.spikein_summary:q} \
     --blacklist-mito-summary {output.blacklist_mito_summary:q} \
     --frip-fragment-level {output.frip_fragment_level:q} \
@@ -132,7 +139,7 @@ if ENABLE_MULTIQC:
             markdup=expand(PATHS.mark_duplicates_metrics("{sample}"), sample=SAMPLES),
             insert_size=expand(PATHS.insert_size_metrics("{sample}"), sample=SAMPLES) if MODE == "pe" and ENABLE_INSERT_SIZE_QC else [],
             frip=expand(PATHS.frip("{sample}"), sample=TREATMENTS),
-            bigwig_scale=expand(PATHS.bigwig_header_qc("{sample}"), sample=SAMPLES) if "CPM" in SCALE_METHODS else [],
+            bigwig_scale=expand(PATHS.bigwig_header_qc("{sample}"), sample=SAMPLES) if "cpm" in SCALE_METHODS else [],
             normalization=PATHS.normalization_metrics() if CTX.has_spikein else [],
             rloop_qc=PATHS.replicate_correlation() if CTX.count_matrix_enabled else [],
             rnaseh=expand(PATHS.rnaseh_ratio_summary("{sample}"), sample=rnaseh_treatments(CTX)) if CTX.rnaseh_enabled and CTX.rnaseh_mode in {"ratio", "both"} else []

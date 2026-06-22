@@ -34,8 +34,9 @@ enable_multiqc: true
 # Scale methods can be multi-selected. Spike-in is preferred when global signal
 # changes are biologically meaningful.
 scale_methods:
-  - CPM
-  - spikein
+  - cpm
+  - absolute_spikein
+  - matched_ref_spikein
 
 # Generic spike-in normalization. E. coli remains the example/default genome,
 # but any spike-in genome can be used if a Bowtie2 index is provided.
@@ -64,7 +65,8 @@ count_matrix:
 fastp_extra: ""
 fastp_pe_extra: "--detect_adapter_for_pe"
 fastp_se_extra: ""
-bowtie2_extra: "--very-sensitive"
+bowtie2_extra: "--end-to-end --very-sensitive --no-mixed --no-discordant -I 10 -X 700"
+spikein_bowtie2_extra: "--end-to-end --very-sensitive --no-overlap --no-dovetail --no-mixed --no-discordant -I 10 -X 700"
 mark_duplicates_extra: ""
 alignment_filter_min_mapq: 30
 alignment_filter_view_extra: ""  # auto: PE uses -F 3852, SE uses -F 3844

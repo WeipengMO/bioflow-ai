@@ -48,8 +48,8 @@ dds <- DESeqDataSetFromMatrix(
 dds <- dds[rowSums(counts(dds)) > 0, ]
 if (!is.null(spikein_metrics_path) && nzchar(spikein_metrics_path) && file.exists(spikein_metrics_path)) {
   spikein <- read.delim(spikein_metrics_path, check.names = FALSE)
-  if (all(c("sample", "spikein_scale_factor") %in% colnames(spikein))) {
-    factors <- spikein$spikein_scale_factor[match(colnames(dds), spikein$sample)]
+  if (all(c("sample", "matched_anchor_spikein_scale_factor") %in% colnames(spikein))) {
+    factors <- spikein$matched_anchor_spikein_scale_factor[match(colnames(dds), spikein$sample)]
     factors <- suppressWarnings(as.numeric(factors))
     if (all(is.finite(factors)) && all(factors > 0)) {
       sf <- 1 / factors

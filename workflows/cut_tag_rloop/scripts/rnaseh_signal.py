@@ -102,11 +102,11 @@ def main() -> None:
     parser.add_argument("--scale-method", required=True)
     args = parser.parse_args()
 
-    if args.scale_method == "CPM":
+    if args.scale_method == "cpm":
         print(
             "WARNING: RNaseH-sensitive regions are being identified from CPM-normalized bigWigs. "
             "CPM is useful for browser-scale signal comparison but can obscure global RNaseH depletion. "
-            "Use spikein scale when spike-in data are available."
+            "Use matched_ref_spikein scale when spike-in data are available."
         )
 
     peaks = read_bed(args.treatment_peaks)

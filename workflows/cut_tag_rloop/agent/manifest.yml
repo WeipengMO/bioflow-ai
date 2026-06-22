@@ -81,7 +81,8 @@ notes:
   - Human genome resources must be build-consistent, especially bowtie2 index, blacklist, and MACS3 gsize.
   - CUT&Tag peak calling keeps duplicate-marked fragments by default and records duplicate metrics as QC.
   - Raw sample peaks are not definitive R-loop sites; prioritize RNaseH-sensitive and replicate-aware RNaseH-depleted regions for interpretation.
-  - Default scale_methods are CPM and spikein; bigWigs are browser tracks, while downstream interpretation should prioritize the shared peak count matrix.
+  - Default scale_methods are cpm, absolute_spikein, and matched_ref_spikein; bigWigs are browser tracks, while downstream interpretation should prioritize the shared peak count matrix.
+  - Spike-in metrics use anchor/target terminology: the anchor is the matched NoRNaseH treatment sample, and matched_ref_spikein uses matched_anchor_spikein_scale_factor.
   - Spike-in warnings are written outside results in warnings/.
 
 required_config_keys:
@@ -111,6 +112,7 @@ optional_config_keys:
   - fastp_se_extra
   - alignment_filter_min_mapq
   - alignment_filter_view_extra
+  - spikein_bowtie2_extra
   - macs3_extra
   - consensus_min_support
 
@@ -135,8 +137,9 @@ generated_outputs:
     - results/aligned_data/{sample}.signal.keepdup.filtered.bam
     - results/aligned_data/{sample}.signal.keepdup.filtered.bam.bai
   tracks:
-    - results/bigwig/CPM/{sample}.CPM.bw
-    - results/bigwig/spikein/{sample}.spikein.bw
+    - results/bigwig/cpm/{sample}.cpm.bw
+    - results/bigwig/absolute_spikein/{sample}.absolute_spikein.bw  # only when spike-in is enabled
+    - results/bigwig/matched_ref_spikein/{sample}.matched_ref_spikein.bw  # only when spike-in is enabled
   peaks:
     - results/peaks/{sample}.cut_tag_rloop_peaks.broadPeak
     - results/peaks/{sample}.cut_tag_rloop_peaks.narrowPeak
@@ -151,7 +154,7 @@ generated_outputs:
     - results/counts/peak_counts.featureCounts.txt
     - results/counts/peak_counts.raw.tsv
     - results/counts/peak_counts.cpm.tsv
-    - results/counts/peak_counts.spikein_normalized.tsv
+    - results/counts/peak_counts.spikein_normalized.tsv  # only when spike-in is enabled
   replicate_peak_sets:
     - results/intersect_peaks/{group}.intersect_peaks.bed
     - results/consensus_peaks/{group}.consensus_peaks.bed
@@ -168,6 +171,9 @@ generated_outputs:
     - results/qc/replicate_correlation.tsv
     - results/qc/sample_pca.pdf
     - results/qc/rnaseh_depletion_summary.tsv
+    - results/qc/rnaseh_specificity_summary.tsv
+    - results/qc/rnaseh_signal_scatter.pdf
+    - results/qc/rnaseh_depletion_fraction.pdf
   reports:
     - results/reports/multiqc_report.html
   logs:

@@ -46,8 +46,9 @@ Recommended defaults:
 assay: CUT&Tag-R-loop
 peak_type: broad
 scale_methods:
-  - CPM
-  - spikein
+  - cpm
+  - absolute_spikein
+  - matched_ref_spikein
 spikein:
   enabled: true
   genome: ecoli
@@ -63,8 +64,9 @@ rnaseh_sensitive:
 2. In `config/config.yml`, confirm:
    ```yaml
    scale_methods:
-     - CPM
-     - spikein
+     - cpm
+     - absolute_spikein
+     - matched_ref_spikein
    spikein:
      enabled: true
      genome: ecoli

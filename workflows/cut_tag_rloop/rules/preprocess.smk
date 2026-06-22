@@ -341,7 +341,7 @@ if CTX.has_spikein:
         params:
             genome=lambda wildcards: CTX.spikein_index,
             reads_arg=bowtie2_reads_arg,
-            extra=lambda wildcards: config.get("bowtie2_extra", "--very-sensitive")
+            extra=lambda wildcards: spikein_bowtie2_extra()
         log:
             PATHS.log("{sample}.bowtie2_spikein")
         threads:
@@ -427,13 +427,13 @@ rule bam_coverage_cpm:
         bam=PATHS.signal_bam("{sample}"),
         bai=PATHS.signal_bai("{sample}")
     output:
-        PATHS.bigwig_track("CPM", "{sample}")
+        PATHS.bigwig_track("cpm", "{sample}")
     wildcard_constraints:
         sample=SAMPLE_PATTERN
     params:
         extra=lambda wildcards: config.get("bam_coverage_extra", "--binSize 10 --normalizeUsing CPM --skipNonCoveredRegions")
     log:
-        PATHS.log("{sample}.bamCoverage.CPM")
+        PATHS.log("{sample}.bamCoverage.cpm")
     threads:
         workflow_threads("bam_coverage", 8)
     conda:
@@ -453,19 +453,19 @@ test -s {output:q}
 
 
 if CTX.has_spikein:
-    rule bam_coverage_spikein_scaled:
+    rule bam_coverage_matched_ref_spikein:
         input:
             bam=PATHS.signal_bam("{sample}"),
             bai=PATHS.signal_bai("{sample}"),
             metrics=PATHS.normalization_metrics()
         output:
-            PATHS.bigwig_track("spikein", "{sample}")
+            PATHS.bigwig_track("matched_ref_spikein", "{sample}")
         wildcard_constraints:
             sample=SAMPLE_PATTERN
         params:
             extra=lambda wildcards: config.get("spikein_bam_coverage_extra", "--binSize 10 --normalizeUsing None")
         log:
-            PATHS.log("{sample}.bamCoverage.spikein")
+            PATHS.log("{sample}.bamCoverage.matched_ref_spikein")
         threads:
             workflow_threads("bam_coverage_scaled", 8)
         conda:
@@ -474,9 +474,46 @@ if CTX.has_spikein:
             r"""
 set -euo pipefail
 mkdir -p $(dirname {output:q}) $(dirname {log:q})
-scale_factor=$(awk -F '\t' -v sample={wildcards.sample:q} 'NR==1 {{for (i=1; i<=NF; i++) if ($i=="spikein_scale_factor") col=i; next}} $1==sample {{print $col; found=1; exit}} END {{if (!found || !col) exit 2}}' {input.metrics:q})
+scale_factor=$(awk -F '\t' -v sample={wildcards.sample:q} 'NR==1 {{for (i=1; i<=NF; i++) if ($i=="matched_anchor_spikein_scale_factor") col=i; next}} $1==sample {{print $col; found=1; exit}} END {{if (!found || !col) exit 2}}' {input.metrics:q})
 if [[ "$scale_factor" == "NA" || -z "$scale_factor" ]]; then
-    echo "Missing spikein_scale_factor for {wildcards.sample}; see normalization metrics and warnings." > {log:q}
+    echo "Missing matched_anchor_spikein_scale_factor for {wildcards.sample}; see normalization metrics and warnings." > {log:q}
+    exit 1
+fi
+bamCoverage \
+    --bam {input.bam:q} \
+    -o {output:q} \
+    --numberOfProcessors {threads} \
+    {params.extra} \
+    --scaleFactor "$scale_factor" \
+    &> {log:q}
+test -s {output:q}
+            """
+
+
+    rule bam_coverage_absolute_spikein:
+        input:
+            bam=PATHS.signal_bam("{sample}"),
+            bai=PATHS.signal_bai("{sample}"),
+            metrics=PATHS.normalization_metrics()
+        output:
+            PATHS.bigwig_track("absolute_spikein", "{sample}")
+        wildcard_constraints:
+            sample=SAMPLE_PATTERN
+        params:
+            extra=lambda wildcards: config.get("spikein_bam_coverage_extra", "--binSize 10 --normalizeUsing None")
+        log:
+            PATHS.log("{sample}.bamCoverage.absolute_spikein")
+        threads:
+            workflow_threads("bam_coverage_scaled", 8)
+        conda:
+            ENV
+        shell:
+            r"""
+set -euo pipefail
+mkdir -p $(dirname {output:q}) $(dirname {log:q})
+scale_factor=$(awk -F '\t' -v sample={wildcards.sample:q} 'NR==1 {{for (i=1; i<=NF; i++) if ($i=="absolute_spikein_scale_factor") col=i; next}} $1==sample {{print $col; found=1; exit}} END {{if (!found || !col) exit 2}}' {input.metrics:q})
+if [[ "$scale_factor" == "NA" || -z "$scale_factor" ]]; then
+    echo "Missing absolute_spikein_scale_factor for {wildcards.sample}; see normalization metrics and warnings." > {log:q}
     exit 1
 fi
 bamCoverage \
@@ -492,7 +529,7 @@ test -s {output:q}
 
 rule bigwig_header_qc:
     input:
-        cpm=PATHS.bigwig_track("CPM", "{sample}")
+        cpm=PATHS.bigwig_track("cpm", "{sample}")
     output:
         PATHS.bigwig_header_qc("{sample}")
     wildcard_constraints:

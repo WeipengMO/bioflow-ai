@@ -160,7 +160,7 @@ def read_spikein_scale_factors(path: str | None) -> dict[str, float]:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
             sample = row.get("sample", "")
-            scale = row.get("spikein_scale_factor", "")
+            scale = row.get("matched_anchor_spikein_scale_factor", "")
             if sample and scale and scale != "NA":
                 values[sample] = float(scale)
     return values
@@ -173,6 +173,30 @@ def write_matrix(path: str, universe_rows: list[list[str]], samples: list[str], 
         writer.writerow(["peak_id", "chrom", "start", "end", *samples])
         for row, values in zip(universe_rows, matrix):
             writer.writerow([row[3], row[0], row[1], row[2], *values])
+
+
+def write_spikein_matrix_if_requested(
+    output_path: str,
+    normalization_metrics: str,
+    universe_rows: list[list[str]],
+    samples: list[str],
+    raw_matrix: list[list[int]],
+) -> bool:
+    if not output_path or not normalization_metrics:
+        return False
+    scale_factors = read_spikein_scale_factors(normalization_metrics)
+    missing = [sample for sample in samples if sample not in scale_factors]
+    if missing:
+        raise ValueError(
+            "Missing spike-in scale factor(s) for sample(s): "
+            + ", ".join(missing)
+            + ". Refusing to write a spike-in normalized matrix with implicit zeroes."
+        )
+    spikein_matrix = []
+    for row in raw_matrix:
+        spikein_matrix.append([f"{value * scale_factors[sample]:.8g}" for value, sample in zip(row, samples)])
+    write_matrix(output_path, universe_rows, samples, spikein_matrix)
+    return True
 
 
 def main() -> None:
@@ -193,7 +217,7 @@ def main() -> None:
     parser.add_argument("--output-featurecounts", required=True)
     parser.add_argument("--output-raw", required=True)
     parser.add_argument("--output-cpm", required=True)
-    parser.add_argument("--output-spikein", required=True)
+    parser.add_argument("--output-spikein", default="")
     parser.add_argument("--output-annotation-bed", required=True)
     parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
@@ -232,11 +256,13 @@ def main() -> None:
     write_matrix(args.output_raw, universe_rows, samples, raw_matrix)
     write_matrix(args.output_cpm, universe_rows, samples, cpm_matrix)
 
-    scale_factors = read_spikein_scale_factors(args.normalization_metrics)
-    spikein_matrix = []
-    for row in raw_matrix:
-        spikein_matrix.append([f"{value * scale_factors.get(sample, 0.0):.8g}" for value, sample in zip(row, samples)])
-    write_matrix(args.output_spikein, universe_rows, samples, spikein_matrix)
+    write_spikein_matrix_if_requested(
+        args.output_spikein,
+        args.normalization_metrics,
+        universe_rows,
+        samples,
+        raw_matrix,
+    )
 
 
 if __name__ == "__main__":

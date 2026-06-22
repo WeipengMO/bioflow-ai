@@ -71,7 +71,7 @@ def read_spikein_groups(path: str) -> dict[str, dict[str, str]]:
     groups: dict[str, dict[str, str]] = {}
     with open(path, newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        required = {"sample", "spikein_group", "spikein_reference_sample"}
+        required = {"sample", "spikein_group", "spikein_anchor_sample"}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError("Spike-in group manifest is missing column(s): " + ", ".join(sorted(missing)))
@@ -81,13 +81,19 @@ def read_spikein_groups(path: str) -> dict[str, dict[str, str]]:
                 continue
             groups[sample] = {
                 "spikein_group": row["spikein_group"].strip(),
-                "spikein_reference_sample": row["spikein_reference_sample"].strip(),
+                "spikein_anchor_sample": row["spikein_anchor_sample"].strip(),
             }
     return groups
 
 
 def format_float(value: float) -> str:
     return f"{value:.8g}"
+
+
+def absolute_spikein_scale_factor(spikein_count: int, constant: float = 10000.0) -> float | None:
+    if spikein_count <= 0:
+        return None
+    return constant / spikein_count
 
 
 def write_warnings(path: str, text_path: str, rows: list[dict[str, str]]) -> None:
@@ -177,6 +183,7 @@ def main() -> None:
             warning_level = "warning"
             warning_message = "Spike-in support is below the configured count or fraction threshold."
 
+        absolute_scale = absolute_spikein_scale_factor(spikein_count)
         if warning_level != "ok":
             warnings.append(
                 {
@@ -203,61 +210,62 @@ def main() -> None:
                 "spikein_fraction": format_float(spikein_fraction),
                 "spikein_counting_mode": args.spikein_counting_mode,
                 "spikein_group": group_info["spikein_group"],
-                "spikein_reference_sample": group_info["spikein_reference_sample"],
-                "spikein_reference_count": "NA",
-                "spikein_reference_human_unique_fragments": "NA",
-                "spikein_raw_scale_factor": "NA",
-                "spikein_unit_scale_factor": "NA",
-                "spikein_scale_factor": "NA",
+                "spikein_anchor_sample": group_info["spikein_anchor_sample"],
+                "spikein_anchor_count": "NA",
+                "spikein_anchor_human_unique_fragments": "NA",
+                "matched_anchor_spikein_raw_scale_factor": "NA",
+                "matched_anchor_unit_scale_factor": "NA",
+                "matched_anchor_spikein_scale_factor": "NA",
+                "absolute_spikein_scale_factor": format_float(absolute_scale) if absolute_scale is not None else "NA",
                 "spikein_warning": warning_level if warning_level != "ok" else "",
                 "warning_message": warning_message,
             }
         )
 
     rows_by_sample = {str(row["sample"]): row for row in raw_rows}
-    reported_reference_errors = set()
+    reported_anchor_errors = set()
     for row in raw_rows:
-        reference_sample = str(row["spikein_reference_sample"])
-        reference = rows_by_sample.get(reference_sample)
-        if reference is None:
-            raise ValueError(f"Spike-in reference sample is not declared: {reference_sample}")
-        reference_count = int(reference["spikein_count"])
-        reference_unique = int(reference["human_unique_fragments"])
-        row["spikein_reference_count"] = reference_count
-        row["spikein_reference_human_unique_fragments"] = reference_unique
-        if reference_count <= 0 and (reference_sample, "spikein") not in reported_reference_errors:
-            reported_reference_errors.add((reference_sample, "spikein"))
+        anchor_sample = str(row["spikein_anchor_sample"])
+        anchor = rows_by_sample.get(anchor_sample)
+        if anchor is None:
+            raise ValueError(f"Spike-in anchor sample is not declared: {anchor_sample}")
+        anchor_count = int(anchor["spikein_count"])
+        anchor_unique = int(anchor["human_unique_fragments"])
+        row["spikein_anchor_count"] = anchor_count
+        row["spikein_anchor_human_unique_fragments"] = anchor_unique
+        if anchor_count <= 0 and (anchor_sample, "spikein") not in reported_anchor_errors:
+            reported_anchor_errors.add((anchor_sample, "spikein"))
             warnings.append(
                 {
-                    "sample": reference_sample,
+                    "sample": anchor_sample,
                     "spikein_genome": args.spikein_genome,
-                    "spikein_count": str(reference_count),
-                    "spikein_fraction": str(reference["spikein_fraction"]),
-                    "threshold": "reference_spikein_count>0",
+                    "spikein_count": str(anchor_count),
+                    "spikein_fraction": str(anchor["spikein_fraction"]),
+                    "threshold": "anchor_spikein_count>0",
                     "severity": "error",
-                    "message": "Spike-in reference sample has no usable spike-in reads/fragments.",
+                    "message": "Spike-in anchor sample has no usable spike-in reads/fragments.",
                 }
             )
-        if reference_unique <= 0 and (reference_sample, "human_unique") not in reported_reference_errors:
-            reported_reference_errors.add((reference_sample, "human_unique"))
+        if anchor_unique <= 0 and (anchor_sample, "human_unique") not in reported_anchor_errors:
+            reported_anchor_errors.add((anchor_sample, "human_unique"))
             warnings.append(
                 {
-                    "sample": reference_sample,
+                    "sample": anchor_sample,
                     "spikein_genome": args.spikein_genome,
-                    "spikein_count": str(reference_count),
-                    "spikein_fraction": str(reference["spikein_fraction"]),
-                    "threshold": "reference_human_unique_fragments>0",
+                    "spikein_count": str(anchor_count),
+                    "spikein_fraction": str(anchor["spikein_fraction"]),
+                    "threshold": "anchor_human_unique_fragments>0",
                     "severity": "error",
-                    "message": "Spike-in reference sample has no usable human unique fragments for unit scaling.",
+                    "message": "Spike-in anchor sample has no usable human unique fragments for unit scaling.",
                 }
             )
         count = int(row["spikein_count"])
-        if count > 0 and reference_count > 0 and reference_unique > 0:
-            raw_scale = reference_count / count
-            unit_scale = 1_000_000 / reference_unique
-            row["spikein_raw_scale_factor"] = format_float(raw_scale)
-            row["spikein_unit_scale_factor"] = format_float(unit_scale)
-            row["spikein_scale_factor"] = format_float(raw_scale * unit_scale)
+        if count > 0 and anchor_count > 0 and anchor_unique > 0:
+            raw_scale = anchor_count / count
+            unit_scale = 1_000_000 / anchor_unique
+            row["matched_anchor_spikein_raw_scale_factor"] = format_float(raw_scale)
+            row["matched_anchor_unit_scale_factor"] = format_float(unit_scale)
+            row["matched_anchor_spikein_scale_factor"] = format_float(raw_scale * unit_scale)
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     fields = [
@@ -272,12 +280,13 @@ def main() -> None:
         "spikein_fraction",
         "spikein_counting_mode",
         "spikein_group",
-        "spikein_reference_sample",
-        "spikein_reference_count",
-        "spikein_reference_human_unique_fragments",
-        "spikein_raw_scale_factor",
-        "spikein_unit_scale_factor",
-        "spikein_scale_factor",
+        "spikein_anchor_sample",
+        "spikein_anchor_count",
+        "spikein_anchor_human_unique_fragments",
+        "matched_anchor_spikein_raw_scale_factor",
+        "matched_anchor_unit_scale_factor",
+        "matched_anchor_spikein_scale_factor",
+        "absolute_spikein_scale_factor",
         "spikein_warning",
         "warning_message",
     ]

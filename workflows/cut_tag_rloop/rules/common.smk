@@ -12,7 +12,7 @@ PAIRED_FASTQ_RE = re.compile(
     re.IGNORECASE,
 )
 ALLOWED_ROLES = {"treatment", "control", "rnaseh_control"}
-ALLOWED_SCALE_METHODS = {"CPM", "spikein"}
+ALLOWED_SCALE_METHODS = {"cpm", "absolute_spikein", "matched_ref_spikein"}
 ALLOWED_SPIKEIN_MODES = {"mapped_reads", "proper_pair_fragments"}
 ALLOWED_RNASEH_MODES = {"ratio", "deseq2", "both"}
 
@@ -199,6 +199,15 @@ class WorkflowPaths:
 
     def rnaseh_depletion_summary(self):
         return f"{self.rnaseh_qc}/rnaseh_depletion_summary.tsv"
+
+    def rnaseh_specificity_summary(self):
+        return f"{self.rnaseh_qc}/rnaseh_specificity_summary.tsv"
+
+    def rnaseh_signal_scatter(self):
+        return f"{self.rnaseh_qc}/rnaseh_signal_scatter.pdf"
+
+    def rnaseh_depletion_fraction_plot(self):
+        return f"{self.rnaseh_qc}/rnaseh_depletion_fraction.pdf"
 
     def spikein_summary(self):
         return f"{self.rnaseh_qc}/spikein_summary.tsv"
@@ -408,14 +417,14 @@ def valid_groups(group_data, samples):
     return sorted(group for group, members in group_data.items() if len(members) >= 2 and all(sample in sample_set for sample in members))
 
 
-def assign_spikein_sample(mapping, sample, group, reference, source):
+def assign_spikein_sample(mapping, sample, group, anchor, source):
     existing = mapping.get(sample)
     if existing:
         # A shared control (e.g. IgG used by multiple treatments) is allowed
         # to appear in multiple spike-in groups. Keep the first assignment so
         # the normalization script sees exactly one group per sample.
         return
-    mapping[sample] = {"group": group, "reference": reference}
+    mapping[sample] = {"group": group, "anchor": anchor}
 
 
 def build_spikein_group_data(sample_data):
@@ -423,10 +432,10 @@ def build_spikein_group_data(sample_data):
     # Multiple treatments may share the same sample_config group (for consensus peaks);
     # spike-in groups are independent: one treatment per spike-in group.
     sample_to_group = {}
-    group_to_reference = {}
+    group_to_anchor = {}
     for treatment in sample_data.treatments:
         group = f"spikein_{treatment}"
-        group_to_reference[group] = treatment
+        group_to_anchor[group] = treatment
         assign_spikein_sample(sample_to_group, treatment, group, treatment, "treatment")
         rnaseh = sample_data.rnaseh_controls.get(treatment)
         if rnaseh:
@@ -445,7 +454,7 @@ def build_spikein_group_data(sample_data):
 
     return SimpleNamespace(
         sample_to_group=sample_to_group,
-        group_to_reference=group_to_reference,
+        group_to_anchor=group_to_anchor,
     )
 
 
@@ -534,18 +543,23 @@ def parse_nested_positive_float(section_name, key, default):
 
 
 def normalize_scale_methods(value):
-    raw_methods = as_list(value if value is not None else ["CPM", "spikein"])
+    raw_methods = as_list(value if value is not None else ["cpm", "absolute_spikein", "matched_ref_spikein"])
     if not raw_methods:
-        raise ValueError("config['scale_methods'] must include at least one method: CPM or spikein.")
+        raise ValueError("config['scale_methods'] must include at least one method: cpm, absolute_spikein, or matched_ref_spikein.")
     normalized = []
     for method in raw_methods:
         low = str(method).strip().lower()
         if low == "cpm":
-            normalized.append("CPM")
-        elif low == "spikein":
-            normalized.append("spikein")
+            normalized.append("cpm")
+        elif low == "matched_ref_spikein":
+            normalized.append("matched_ref_spikein")
+        elif low == "absolute_spikein":
+            normalized.append("absolute_spikein")
         else:
-            raise ValueError("config['scale_methods'] only supports CPM and spikein; invalid value: " + str(method))
+            raise ValueError(
+                "config['scale_methods'] only supports cpm, absolute_spikein, and matched_ref_spikein; invalid value: "
+                + str(method)
+            )
     return unique_list(normalized)
 
 
@@ -567,7 +581,7 @@ def build_workflow_context(config):
     validate_choices([mode], {"pe", "se"}, "mode")
     peak_type = str(config.get("peak_type", "broad")).lower()
     validate_choices([peak_type], {"broad", "narrow"}, "peak_type")
-    scale_methods = normalize_scale_methods(config.get("scale_methods", ["CPM", "spikein"]))
+    scale_methods = normalize_scale_methods(config.get("scale_methods", ["cpm", "absolute_spikein", "matched_ref_spikein"]))
 
     sample_metadata = load_yaml(config.get("sample_config", "config/samples.yml"))
     sample_data = load_sample_data(sample_metadata)
@@ -577,19 +591,20 @@ def build_workflow_context(config):
     validate_sample_fastqs(sample_data.samples, fastqs, mode)
 
     spikein_cfg = section("spikein")
-    spikein_enabled = section_bool("spikein", "enabled", "spikein" in scale_methods)
+    needs_spikein = bool({"absolute_spikein", "matched_ref_spikein"} & set(scale_methods))
+    spikein_enabled = section_bool("spikein", "enabled", needs_spikein)
     spikein_index = str(spikein_cfg.get("bowtie2_index", "") or "").strip()
     spikein_genome_name = str(spikein_cfg.get("genome", "ecoli") or "ecoli").strip()
     spikein_mode = str(spikein_cfg.get("mode", "proper_pair_fragments" if mode == "pe" else "mapped_reads") or "").strip()
     validate_choices([spikein_mode], ALLOWED_SPIKEIN_MODES, "spikein.mode")
-    if "spikein" in scale_methods and not spikein_enabled:
-        raise ValueError("scale_methods includes spikein, but config['spikein']['enabled'] is false.")
+    if needs_spikein and not spikein_enabled:
+        raise ValueError("scale_methods includes spike-in methods, but config['spikein']['enabled'] is false.")
     if spikein_enabled:
         if not spikein_index:
             raise ValueError("config['spikein']['bowtie2_index'] is required when spike-in normalization is enabled.")
         spikein_group_data = build_spikein_group_data(sample_data)
     else:
-        spikein_group_data = SimpleNamespace(sample_to_group={}, group_to_reference={})
+        spikein_group_data = SimpleNamespace(sample_to_group={}, group_to_anchor={})
 
     count_matrix_cfg = section("count_matrix")
     count_matrix_enabled = section_bool("count_matrix", "enabled", True)
@@ -623,7 +638,7 @@ def build_workflow_context(config):
         spikein_index=spikein_index,
         spikein_counting_mode=spikein_mode,
         spikein_sample_to_group=spikein_group_data.sample_to_group,
-        spikein_group_to_reference=spikein_group_data.group_to_reference,
+        spikein_group_to_anchor=spikein_group_data.group_to_anchor,
         spikein_min_mapped_reads=parse_nested_positive_int("spikein", "min_spikein_reads", 1000),
         spikein_min_fraction=parse_nested_nonnegative_float("spikein", "warn_low_fraction", 0.001),
         count_matrix_enabled=count_matrix_enabled,
@@ -662,8 +677,8 @@ def print_workflow_summary(ctx):
     if ctx.has_spikein:
         print("Spike-in genome: " + ctx.spikein_genome)
         print("Spike-in counting mode: " + ctx.spikein_counting_mode)
-        refs = [f"{group}:{reference}" for group, reference in sorted(ctx.spikein_group_to_reference.items())]
-        print("Spike-in reference groups: " + ",".join(refs))
+        anchors = [f"{group}:{anchor}" for group, anchor in sorted(ctx.spikein_group_to_anchor.items())]
+        print("Spike-in anchor groups: " + ",".join(anchors))
     print("Count matrix: " + ("enabled" if ctx.count_matrix_enabled else "disabled"))
     print("RNaseH-sensitive analysis: " + (ctx.rnaseh_mode if ctx.rnaseh_enabled else "disabled"))
     print("MultiQC: " + ("enabled" if ctx.enable_multiqc else "disabled"))
@@ -721,18 +736,24 @@ def all_outputs(ctx):
             PATHS.sample_pca(),
             PATHS.peak_width_distribution(),
             PATHS.rnaseh_depletion_summary(),
+            PATHS.rnaseh_specificity_summary(),
+            PATHS.rnaseh_signal_scatter(),
+            PATHS.rnaseh_depletion_fraction_plot(),
             PATHS.spikein_summary(),
             PATHS.blacklist_mito_summary(),
             PATHS.frip_fragment_level(),
         ])
-    if "CPM" in ctx.scale_methods:
-        outputs.append(expand(PATHS.bigwig_track("CPM", "{sample}"), sample=ctx.samples))
+    if "cpm" in ctx.scale_methods:
+        outputs.append(expand(PATHS.bigwig_track("cpm", "{sample}"), sample=ctx.samples))
         outputs.append(expand(PATHS.bigwig_header_qc("{sample}"), sample=ctx.samples))
     if ctx.has_spikein:
         outputs.append(PATHS.normalization_metrics())
         outputs.append(PATHS.spikein_warning_tsv())
         outputs.append(PATHS.spikein_warning_txt())
-        outputs.append(expand(PATHS.bigwig_track("spikein", "{sample}"), sample=ctx.samples))
+        if "matched_ref_spikein" in ctx.scale_methods:
+            outputs.append(expand(PATHS.bigwig_track("matched_ref_spikein", "{sample}"), sample=ctx.samples))
+        if "absolute_spikein" in ctx.scale_methods:
+            outputs.append(expand(PATHS.bigwig_track("absolute_spikein", "{sample}"), sample=ctx.samples))
     if ctx.mode == "pe" and ctx.enable_insert_size_qc:
         outputs.append(expand(PATHS.insert_size_metrics("{sample}"), sample=ctx.samples))
     if ctx.enable_multiqc:
@@ -778,6 +799,14 @@ def macs3_extra():
     return "--broad --broad-cutoff 0.1 -q 0.05"
 
 
+def spikein_bowtie2_extra():
+    if config.get("spikein_bowtie2_extra"):
+        return config.get("spikein_bowtie2_extra")
+    if MODE == "pe":
+        return "--end-to-end --very-sensitive --no-overlap --no-dovetail --no-mixed --no-discordant -I 10 -X 700"
+    return "--end-to-end --very-sensitive"
+
+
 def macs3_control_input(wildcards):
     control = CTX.controls.get(wildcards.sample)
     return PATHS.peak_bam(control, CTX.peak_duplicate_mode) if control else []
@@ -802,12 +831,12 @@ def scaled_bigwig_input(wildcards):
 
 
 def rnaseh_sensitive_treatment_bigwig(wildcards):
-    method = "spikein" if CTX.has_spikein and "spikein" in CTX.scale_methods else "CPM"
+    method = "matched_ref_spikein" if CTX.has_spikein and "matched_ref_spikein" in CTX.scale_methods else "cpm"
     return PATHS.bigwig_track(method, wildcards.sample)
 
 
 def rnaseh_sensitive_control_bigwig(wildcards):
-    method = "spikein" if CTX.has_spikein and "spikein" in CTX.scale_methods else "CPM"
+    method = "matched_ref_spikein" if CTX.has_spikein and "matched_ref_spikein" in CTX.scale_methods else "cpm"
     return PATHS.bigwig_track(method, CTX.rnaseh_controls[wildcards.sample])
 
 
@@ -860,8 +889,8 @@ def fastq_metrics_lines():
 
 
 def spikein_group_lines():
-    lines = ["sample\tspikein_group\tspikein_reference_sample"]
+    lines = ["sample\tspikein_group\tspikein_anchor_sample"]
     for sample in CTX.samples:
         assignment = CTX.spikein_sample_to_group[sample]
-        lines.append("\t".join([sample, assignment["group"], assignment["reference"]]))
+        lines.append("\t".join([sample, assignment["group"], assignment["anchor"]]))
     return "\n".join(lines)

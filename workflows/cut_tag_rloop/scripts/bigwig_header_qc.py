@@ -61,7 +61,7 @@ def main() -> None:
     with open(args.output, "w", newline="") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=fields)
         writer.writeheader()
-        write_row(writer, args.sample, "CPM", args.cpm, "", "CPM")
+        write_row(writer, args.sample, "cpm", args.cpm, "", "CPM")
 
 
 if __name__ == "__main__":

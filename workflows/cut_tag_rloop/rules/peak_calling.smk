@@ -50,7 +50,7 @@ if CTX.count_matrix_enabled:
             featurecounts=PATHS.peak_counts_featurecounts(),
             raw=PATHS.peak_counts_raw(),
             cpm=PATHS.peak_counts_cpm(),
-            spikein=PATHS.peak_counts_spikein_normalized(),
+            spikein=PATHS.peak_counts_spikein_normalized() if CTX.has_spikein else [],
             annotation=PATHS.peak_annotation_input()
         params:
             script="scripts/peak_count_matrix.py",
@@ -62,7 +62,8 @@ if CTX.count_matrix_enabled:
             merge_distance=lambda wildcards: int(CTX.count_matrix_merge_distance),
             min_mapq=lambda wildcards: int(CTX.count_matrix_min_mapq),
             featurecounts_extra=lambda wildcards: CTX.count_matrix_featurecounts_extra,
-            normalization_metrics=lambda wildcards: PATHS.normalization_metrics() if CTX.has_spikein else ""
+            normalization_metrics=lambda wildcards: PATHS.normalization_metrics() if CTX.has_spikein else "",
+            output_spikein=lambda wildcards: PATHS.peak_counts_spikein_normalized() if CTX.has_spikein else ""
         log:
             PATHS.log("peak_count_matrix")
         threads:
@@ -90,7 +91,7 @@ python {params.script:q} \
     --output-featurecounts {output.featurecounts:q} \
     --output-raw {output.raw:q} \
     --output-cpm {output.cpm:q} \
-    --output-spikein {output.spikein:q} \
+    --output-spikein {params.output_spikein:q} \
     --output-annotation-bed {output.annotation:q} \
     --threads {threads} \
     &> {log:q}
@@ -120,7 +121,7 @@ if CTX.rnaseh_enabled and CTX.rnaseh_mode in {"ratio", "both"}:
             min_treatment_signal=lambda wildcards: CTX.rnaseh_signal_min_treatment_signal,
             min_abs_signal_diff=lambda wildcards: CTX.rnaseh_min_abs_signal_diff,
             pseudocount=lambda wildcards: CTX.rnaseh_pseudocount,
-            scale_method=lambda wildcards: "spikein" if CTX.has_spikein and "spikein" in CTX.scale_methods else "CPM"
+            scale_method=lambda wildcards: "matched_ref_spikein" if CTX.has_spikein and "matched_ref_spikein" in CTX.scale_methods else "cpm"
         log:
             PATHS.log("{sample}.rnaseh_sensitive_ratio")
         threads:

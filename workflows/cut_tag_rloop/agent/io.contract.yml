@@ -66,8 +66,9 @@ generated:
 final_outputs:
   - results/aligned_data/{sample}.signal.keepdup.filtered.bam
   - results/aligned_data/{sample}.signal.keepdup.filtered.bam.bai
-  - results/bigwig/CPM/{sample}.CPM.bw
-  - results/bigwig/spikein/{sample}.spikein.bw
+  - results/bigwig/cpm/{sample}.cpm.bw
+  - results/bigwig/absolute_spikein/{sample}.absolute_spikein.bw  # only when spikein.enabled is true
+  - results/bigwig/matched_ref_spikein/{sample}.matched_ref_spikein.bw  # only when spikein.enabled is true
   - results/peaks/{sample}.cut_tag_rloop_peaks.broadPeak
   - results/peaks/{sample}.cut_tag_rloop_peaks.narrowPeak
   - results/rnaseh/{sample}.rnaseh_sensitive_ratio.tsv
@@ -79,12 +80,15 @@ final_outputs:
   - results/counts/peak_counts.featureCounts.txt
   - results/counts/peak_counts.raw.tsv
   - results/counts/peak_counts.cpm.tsv
-  - results/counts/peak_counts.spikein_normalized.tsv
+  - results/counts/peak_counts.spikein_normalized.tsv  # only when spikein.enabled is true
   - results/intersect_peaks/{group}.intersect_peaks.bed
   - results/consensus_peaks/{group}.consensus_peaks.bed
-  - results/qc/normalization/spikein_summary.tsv
+  - results/qc/normalization/spikein_summary.tsv  # includes spikein_anchor_sample and matched_anchor_spikein_scale_factor
   - results/qc/replicate_correlation.tsv
   - results/qc/rnaseh_depletion_summary.tsv
+  - results/qc/rnaseh_specificity_summary.tsv
+  - results/qc/rnaseh_signal_scatter.pdf
+  - results/qc/rnaseh_depletion_fraction.pdf
   - results/qc/frip/{sample}.frip.txt
   - results/qc/bigwig/{sample}.bigwig_header.tsv
   - results/qc/insert_size/{sample}.insert_size_metrics.txt
